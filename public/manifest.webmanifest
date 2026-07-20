@@ -1,0 +1,26 @@
+{
+  "name": "FIELDTALK",
+  "short_name": "FIELDTALK",
+  "description": "라운드 중 동반자와 실시간으로 소통하는 골프 PTT 커뮤니케이션 앱",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060907",
+  "theme_color": "#060907",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

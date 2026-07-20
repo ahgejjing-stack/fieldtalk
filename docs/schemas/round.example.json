@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "round_demo_001",
+  "status": "active",
+  "course": {
+    "id": "course_demo",
+    "name": "레이크사이드 CC",
+    "totalHoles": 18
+  },
+  "currentHoleNumber": 7,
+  "settings": {
+    "unit": "meter",
+    "soundMode": "fun",
+    "outputTargets": ["phone", "headphones", "watch"]
+  }
+}

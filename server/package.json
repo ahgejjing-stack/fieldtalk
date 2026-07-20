@@ -1,0 +1,11 @@
+{
+  "name": "fieldtalk-signaling-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Two Device PTT Foundation v0.1 -- signaling server (Node built-ins only, no external dependencies: npm registry isn't reachable in this dev sandbox, so miniWebSocketServer.js implements RFC 6455 directly instead of depending on the `ws` package).",
+  "main": "signalingServer.js",
+  "scripts": {
+    "start": "node signalingServer.js"
+  }
+}

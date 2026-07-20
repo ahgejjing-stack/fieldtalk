@@ -1,0 +1,23 @@
+{
+  "id": "shot_round_demo_001_h7_player_jaesik_001",
+  "roundId": "round_demo_001",
+  "holeNumber": 7,
+  "playerId": "player_jaesik",
+  "sequence": 1,
+  "type": "approach",
+  "status": "planned",
+  "club": null,
+  "ballPosition": {
+    "latitude": null,
+    "longitude": null,
+    "source": "mock"
+  },
+  "target": {
+    "type": "pin",
+    "latitude": null,
+    "longitude": null
+  },
+  "distanceToTargetM": 132,
+  "createdAt": "2026-07-14T00:00:00.000Z",
+  "completedAt": null
+}

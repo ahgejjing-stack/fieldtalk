@@ -1,0 +1,2171 @@
+@import url("https://cdnjs.cloudflare.com/ajax/libs/inter/4.0.0/inter.min.css");
+
+:root {
+  --void: #060907;
+  --deep: #0a140f;
+  --surface: rgba(20, 36, 28, 0.55);
+  --surface-strong: rgba(24, 44, 34, 0.72);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-soft: rgba(255, 255, 255, 0.06);
+  --green-900: #0b3d2e;
+  --green-700: #14593f;
+  --green-500: #1f9564;
+  --green-400: #2fbe7f;
+  --green-300: #5ddba0;
+  --gold: #c9a24b;
+  --red: #ff5b4c;
+  --ink-0: #f4f7f5;
+  --ink-1: #a9b6ae;
+  --ink-2: #7f8d84; /* TASK-012: bumped from #66756b (~3.8:1 contrast) for outdoor readability (~5.3:1) */
+  --distance-blue: #4fa8ff;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+}
+
+.ft-root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(120% 90% at 50% -10%, #0d2a1e 0%, transparent 55%),
+    radial-gradient(90% 70% at 85% 100%, #0a1f17 0%, transparent 50%), var(--void);
+  padding: 28px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color: var(--ink-0);
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+button:focus-visible,
+.ft-player-row:focus-visible,
+.ft-companion:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+/* ---------- Phone chrome ---------- */
+.ft-phone {
+  position: relative;
+  width: 393px;
+  height: 852px;
+  max-width: 100%;
+  max-height: 92vh;
+  background: linear-gradient(180deg, #081812 0%, #050907 45%, #060706 100%);
+  border-radius: 55px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 8px #0a0d0b, 0 0 0 9px rgba(255, 255, 255, 0.06), 0 40px 90px rgba(0, 0, 0, 0.65),
+    0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.ft-statusbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 26px;
+  z-index: 40;
+  pointer-events: none;
+}
+.ft-statustime {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  margin-top: 2px;
+}
+.ft-statusicons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+.ft-island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 124px;
+  height: 37px;
+  background: #000;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.ft-home-indicator {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 134px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(244, 247, 245, 0.55);
+  z-index: 50;
+}
+.ft-screen {
+  position: absolute;
+  inset: 0;
+  padding-top: 54px;
+}
+
+/* ---------- Shared bits ---------- */
+.ft-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.ft-icon-btn:active {
+  transform: scale(0.92);
+  background: var(--surface-strong);
+}
+
+.ft-section {
+  padding: 0 20px;
+  margin-top: 26px;
+}
+.ft-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ft-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-1);
+}
+.ft-section-meta {
+  font-size: 12px;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Score Compact/Collapsible UI */
+.ft-score-collapsed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.ft-score-collapsed-row:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.06);
+}
+.ft-score-collapsed-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+.ft-score-collapsed-summary {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-score-collapsed-chevron {
+  flex-shrink: 0;
+  color: var(--ink-2);
+}
+.ft-score-expanded-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 12px;
+}
+.ft-score-complete-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--green-300);
+  background: rgba(47, 190, 127, 0.14);
+  border-radius: 8px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.ft-score-static.is-empty {
+  color: var(--ink-2);
+  font-weight: 700;
+  opacity: 0.7;
+}
+.ft-bottom-spacer {
+  height: 36px;
+}
+
+.ft-avatar {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--avatar-color) 35%, #10241a),
+    color-mix(in srgb, var(--avatar-color) 12%, #081210)
+  );
+  border: 1px solid color-mix(in srgb, var(--avatar-color) 45%, rgba(255, 255, 255, 0.12));
+  color: var(--ink-0);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.ft-avatar-xs {
+  width: 32px;
+  height: 32px;
+  font-size: 10.5px;
+}
+.ft-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #3d4a42;
+  border: 2px solid #0b1911;
+}
+.ft-dot.is-online {
+  background: var(--green-400);
+  box-shadow: 0 0 8px rgba(47, 190, 127, 0.8);
+}
+
+/* ---------- Splash ---------- */
+.ft-splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 110px 24px 56px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ft-splash-glow {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(47, 190, 127, 0.28) 0%, rgba(47, 190, 127, 0) 68%);
+  filter: blur(6px);
+}
+.ft-contour-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.5;
+}
+.ft-contour-bg path {
+  fill: none;
+  stroke: rgba(47, 190, 127, 0.14);
+  stroke-width: 1;
+}
+.ft-splash-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  z-index: 2;
+  animation: ft-fade-up 0.9s ease both;
+}
+.ft-ball-glow {
+  filter: drop-shadow(0 0 22px rgba(47, 190, 127, 0.55));
+}
+.ft-wordmark {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: var(--ink-0);
+}
+.ft-tagline {
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--ink-1);
+  font-weight: 500;
+}
+.ft-splash-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  z-index: 2;
+}
+.ft-progress {
+  width: 120px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.ft-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--green-500), var(--green-300));
+  animation: ft-progress 2.4s ease forwards;
+}
+.ft-splash-hint {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ---------- Home ---------- */
+.ft-home {
+  display: flex;
+  flex-direction: column;
+}
+.ft-home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px 4px;
+}
+.ft-home-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.ft-home-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+.ft-greeting {
+  padding: 18px 20px 4px;
+}
+.ft-greeting h1 {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+.ft-greeting p {
+  font-size: 14px;
+  color: var(--ink-1);
+  margin: 0;
+}
+
+.ft-cta-card {
+  position: relative;
+  margin: 18px 20px 0;
+  padding: 20px;
+  border-radius: 26px;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(31, 149, 100, 0.28), rgba(10, 20, 15, 0.6) 60%);
+  border: 1px solid rgba(93, 219, 160, 0.25);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+.ft-cta-ring {
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  border: 1px solid rgba(93, 219, 160, 0.18);
+}
+.ft-cta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ft-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green-300);
+}
+.ft-cta-time {
+  font-size: 12px;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.ft-cta-course {
+  font-size: 20px;
+  font-weight: 800;
+  margin-top: 10px;
+}
+.ft-cta-sub {
+  font-size: 13px;
+  color: var(--ink-1);
+  margin-top: 2px;
+}
+.ft-primary-btn {
+  margin-top: 18px;
+  width: 100%;
+  height: 50px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--green-400), var(--green-700));
+  color: #04120b;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: 0 12px 28px rgba(47, 190, 127, 0.32);
+  transition: transform 0.15s ease;
+}
+.ft-primary-btn:active {
+  transform: scale(0.97);
+}
+
+/* Round Room Foundation v0.1 — "팀 연결" is core functionality now, not a
+   DEV-only entry point, so it gets a real CTA treatment instead of the
+   subdued DEV-button look. */
+.ft-team-connect-btn {
+  margin-top: 8px;
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(47, 190, 127, 0.12);
+  border: 1px solid rgba(47, 190, 127, 0.35);
+  color: var(--green-300);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.ft-team-connect-btn:active {
+  transform: scale(0.98);
+}
+.ft-preround-provider-row,
+.ft-preround-start-hole-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ft-preround-course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.ft-preround-course-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  text-align: left;
+}
+.ft-preround-course-row.is-selected {
+  border-color: rgba(47, 190, 127, 0.5);
+  background: rgba(47, 190, 127, 0.1);
+}
+.ft-preround-course-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-0);
+}
+.ft-preround-course-meta {
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
+/* Round Room Foundation v0.1 §4/§5 — Room member list, Ready Summary,
+   Warning confirm. Reuses the same compact-row visual language already
+   established (avatar-less rows, small status text) rather than a new
+   pattern. */
+/* RC1-WEEK4 Root Cause Fix: .ft-room-overlay-stack is the ONLY child of
+   .ft-gallery-overlay for Room Overlay specifically — this keeps
+   .ft-gallery-overlay's own row+flex-end layout (shared with the Gallery
+   panel) completely untouched. This wrapper alone switches to a column
+   stack, so the sheet (scrollable) and the footer (never-scrolling,
+   genuinely separate DOM branch) can never compete for the same
+   click-coordinate space, unlike the two earlier same-container attempts. */
+.ft-room-overlay-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ft-room-overlay-footer {
+  width: 100%;
+  background: #0c1710;
+  border: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
+  border-bottom-left-radius: 26px;
+  border-bottom-right-radius: 26px;
+  padding: 10px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+}
+.ft-room-sheet {
+  max-height: 74%;
+  padding-bottom: 10px; /* footer below now supplies its own bottom spacing */
+  border-bottom: none;
+}
+.ft-room-section {
+  margin-bottom: 14px;
+}
+.ft-room-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ft-room-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+.ft-room-member-row.is-joined {
+  border-color: rgba(47, 190, 127, 0.4);
+  background: rgba(47, 190, 127, 0.08);
+}
+.ft-room-member-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-0);
+}
+.ft-room-member-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ft-room-member-row.is-joined .ft-room-member-status {
+  color: var(--green-300);
+}
+.ft-room-ready-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft);
+  font-size: 11px;
+  color: var(--ink-1);
+  margin-bottom: 10px;
+}
+.ft-room-warning-confirm {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(230, 180, 60, 0.1);
+  border: 1px solid rgba(230, 180, 60, 0.35);
+  margin-bottom: 10px;
+}
+.ft-room-warning-confirm p {
+  font-size: 11.5px;
+  color: var(--ink-0);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.ft-companions {
+  display: flex;
+  gap: 14px;
+  padding: 2px 2px 4px;
+}
+.ft-companion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  padding: 10px 4px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+.ft-companion:active {
+  transform: scale(0.96);
+}
+.ft-companion.is-invited {
+  border-color: rgba(47, 190, 127, 0.4);
+}
+.ft-invited-badge {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--green-400);
+  color: #04120b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0b1911;
+}
+.ft-companion-label {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.ft-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ft-recent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+.ft-recent-course {
+  font-size: 14px;
+  font-weight: 700;
+}
+.ft-recent-date {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+.ft-recent-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ft-recent-score-num {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.ft-recent-score-par {
+  font-size: 12px;
+  color: var(--red);
+  font-weight: 700;
+}
+
+.ft-tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 10px 8px 30px;
+  border-top: 1px solid var(--border-soft);
+  background: rgba(6, 10, 8, 0.75);
+  backdrop-filter: blur(24px);
+}
+.ft-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  font-weight: 600;
+  flex: 1;
+  padding: 2px 0;
+}
+.ft-tab.is-active {
+  color: var(--green-400);
+}
+.ft-tab-icon {
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+/* ---------- Round ---------- */
+.ft-round {
+  display: flex;
+  flex-direction: column;
+}
+.ft-round-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 30px;
+}
+
+/* Compact header (Build Phase "UI Compact" task) — one icon row, two text
+   lines, no decorative artwork. Target: about half the height of the old
+   round-header + hole-card combo. */
+.ft-compact-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 6px;
+}
+.ft-compact-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.ft-compact-header-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+.ft-compact-header-line1 b {
+  color: var(--gold);
+}
+.ft-compact-sep {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.ft-compact-strokes {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ft-compact-header-line2 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ft-section-tight {
+  margin-top: 2px;
+}
+.ft-section-compact {
+  margin-top: 6px;
+}
+
+.ft-player-summary-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.ft-player-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  border-left: 2px solid transparent;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ft-player-row:last-child {
+  border-bottom: none;
+}
+.ft-player-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+.ft-player-row.is-live {
+  background: rgba(255, 91, 76, 0.07);
+  border-left-color: var(--red);
+}
+.ft-player-row.is-disconnected {
+  background: rgba(255, 91, 76, 0.05);
+  border-left-color: rgba(255, 91, 76, 0.5);
+}
+.ft-player-row.is-distance-flash {
+  background: rgba(79, 168, 255, 0.08);
+  border-left-color: var(--distance-blue);
+  animation: ft-card-flash 1s ease;
+}
+.ft-player-row.is-cheer-flash {
+  background: rgba(201, 162, 75, 0.08);
+  border-left-color: var(--gold);
+  animation: ft-card-flash 1s ease;
+}
+/* Sprint 3 §2: selection must be "unmistakable from across the room" — this
+   is placed after the event-accent rules above on purpose, so a selected
+   row still reads as selected even while a transient event (말하는 중 등)
+   is also active on the same row; the two aren't mutually exclusive. */
+.ft-player-row.is-selected {
+  background: rgba(47, 190, 127, 0.12);
+  border-left-color: var(--green-400);
+  box-shadow: inset 0 0 0 1px rgba(47, 190, 127, 0.35);
+}
+.ft-player-row.is-selected .ft-player-row-name {
+  color: var(--green-300);
+}
+.ft-player-row.is-selected .ft-player-row-distance {
+  color: var(--green-300);
+}
+.ft-player-row-avatar {
+  position: relative;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  font-weight: 700;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--avatar-color) 35%, #10241a),
+    color-mix(in srgb, var(--avatar-color) 12%, #081210)
+  );
+  border: 1px solid color-mix(in srgb, var(--avatar-color) 45%, rgba(255, 255, 255, 0.12));
+  color: var(--ink-0);
+}
+.ft-live-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--red);
+  animation: ft-blink 1s ease-in-out infinite;
+}
+.ft-player-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ft-player-row-line1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ft-player-row-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-player-row-distance {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ft-player-row-distance.is-measured {
+  color: var(--distance-blue);
+}
+.ft-player-row-distance.is-demo_estimate {
+  color: var(--gold);
+}
+.ft-player-row-distance.is-coordinate_calc {
+  color: var(--green-300);
+}
+.ft-player-row-distance.is-gps {
+  color: var(--ink-2);
+}
+.ft-player-row-distance.is-shared_adjusted_estimate {
+  color: var(--gold);
+}
+.ft-player-row-distance.is-unavailable {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.ft-player-row-line2-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.ft-player-row-line2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 거리 표시 정책 보완: secondary GPS — deliberately lower contrast than the
+   primary number, but still comfortably readable ("햇빛 아래에서도"), and
+   always paired with the literal "GPS" text label, never color-only. */
+.ft-player-row-secondary-gps {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ft-player-row-line2.is-speaking,
+.ft-player-row-line2.is-disconnected {
+  color: var(--red);
+  font-weight: 700;
+}
+.ft-player-row-line2.is-distance_shared {
+  color: var(--distance-blue);
+  font-weight: 700;
+}
+.ft-player-row-line2.is-sound_reaction {
+  color: var(--gold);
+  font-weight: 700;
+}
+.ft-player-row-line2.is-measured {
+  color: var(--distance-blue);
+}
+.ft-player-row-line2.is-demo_estimate {
+  color: var(--gold);
+}
+.ft-player-row-line2.is-coordinate_calc {
+  color: var(--green-300);
+}
+.ft-player-row-line2.is-shared_adjusted_estimate {
+  color: var(--gold);
+}
+.ft-player-row-line2.is-unavailable {
+  color: var(--ink-2);
+  font-style: italic;
+}
+/* Sprint 3: repurposed from a standalone mute toggle into a PTT-target
+   selection indicator — same visual slot, new meaning (see PlayerCard.jsx
+   doc comment). */
+.ft-player-row-target-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  opacity: 0.5;
+}
+.ft-player-row-target-icon.is-selected {
+  color: var(--green-300);
+  opacity: 1;
+  background: rgba(47, 190, 127, 0.16);
+}
+
+/* "전체" — a distinct pseudo-row, same button/selection mechanics as a
+   player row, different internal layout (no avatar/distance, just an
+   icon + label). */
+.ft-player-row-all {
+  gap: 10px;
+}
+.ft-player-row-all-icon {
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
+}
+.ft-player-row-all-label {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-0);
+}
+
+.ft-ptt-target-label {
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-top: 6px;
+  margin-bottom: -4px;
+}
+
+.ft-speaker-banner {
+  margin: 14px 20px 0;
+  padding: 9px 14px;
+  border-radius: 14px;
+  background: rgba(255, 91, 76, 0.1);
+  border: 1px solid rgba(255, 91, 76, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffb2a8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ft-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.ft-wave span {
+  width: 2.5px;
+  background: var(--red);
+  border-radius: 2px;
+  animation: ft-bar 0.9s ease-in-out infinite;
+}
+.ft-wave span:nth-child(1) {
+  height: 5px;
+  animation-delay: 0s;
+}
+.ft-wave span:nth-child(2) {
+  height: 11px;
+  animation-delay: 0.15s;
+}
+.ft-wave span:nth-child(3) {
+  height: 7px;
+  animation-delay: 0.3s;
+}
+.ft-wave span:nth-child(4) {
+  height: 10px;
+  animation-delay: 0.45s;
+}
+
+/* Sprint 3 추가 수정 §3: PTT visuals shrunk (wrap 200→132px, button
+   128→80px). 80px is still well clear of the 64×64px minimum touch target
+   this task requires — only the decorative rings and outer wrap shrank
+   proportionally, the button itself remains comfortably tappable. */
+.ft-ptt-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8px;
+}
+.ft-ptt-wrap {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ft-ptt-contours {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: ft-rotate 70s linear infinite;
+}
+.ft-ptt-contours circle {
+  fill: none;
+  stroke: rgba(93, 219, 160, 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+}
+.ft-ptt-wrap.is-on .ft-ptt-contours circle {
+  stroke: rgba(255, 91, 76, 0.35);
+}
+.ft-ripple {
+  position: absolute;
+  inset: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 91, 76, 0.55);
+  animation: ft-ripple 1.5s ease-out infinite;
+}
+.ft-ptt-btn {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 35% 30%, rgba(93, 219, 160, 0.35), rgba(11, 25, 17, 0.9) 70%);
+  border: 1px solid rgba(93, 219, 160, 0.4);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color: var(--green-300);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    background 0.3s ease;
+  touch-action: none;
+}
+.ft-ptt-wrap.is-on .ft-ptt-btn {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 91, 76, 0.4), rgba(30, 10, 8, 0.92) 70%);
+  border-color: rgba(255, 91, 76, 0.6);
+  color: #ffb2a8;
+  box-shadow: 0 0 36px rgba(255, 91, 76, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: ft-ptt-pulse 1.15s ease-in-out infinite;
+}
+.ft-ptt-btn:active {
+  transform: scale(0.97);
+}
+.ft-ptt-label {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+.ft-ptt-live-label {
+  color: #ffb2a8;
+  font-variant-numeric: tabular-nums;
+}
+
+.ft-voice-meter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3.5px;
+  height: 14px;
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.ft-voice-meter.is-active {
+  opacity: 1;
+}
+.ft-voice-meter span {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffb2a8, var(--red));
+  transition: transform 0.1s ease-out;
+}
+
+.ft-live-badge {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px 6px 10px;
+  border-radius: 20px;
+  background: rgba(28, 10, 9, 0.88);
+  border: 1px solid rgba(255, 91, 76, 0.5);
+  backdrop-filter: blur(16px);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffb2a8;
+  z-index: 45;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  animation: ft-live-badge-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.ft-live-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(255, 91, 76, 0.9);
+  animation: ft-blink 1s ease-in-out infinite;
+}
+
+.ft-distance-card {
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  backdrop-filter: blur(18px);
+}
+
+/* Sprint 3 긴급 수정 §2: was a 2-line stacked card (label row + value row);
+   now a single compact status line so the GPS card takes less height. */
+.ft-team-reference-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 10px;
+  background: rgba(79, 168, 255, 0.08);
+  border: 1px solid rgba(79, 168, 255, 0.25);
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-team-reference-bar.is-flash {
+  animation: ft-card-flash 1s ease;
+}
+.ft-team-reference-bar-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--distance-blue);
+}
+
+/* Sprint 3 추가 수정 §2: GPS 숫자와 실측 입력 버튼을 한 가로 라인에 배치. */
+.ft-gps-row-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* TASK-009 §1: read-only — no cursor, no press feedback, no click handler. */
+.ft-gps-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0px;
+}
+.ft-gps-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.ft-gps-value-big {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+/* Sprint 5.2 — grouped with distance, not the header: this is "info read
+   together when deciding a shot," styled as a quiet secondary line right
+   under the primary number rather than a competing metric. */
+.ft-environment-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ft-environment-row svg {
+  flex-shrink: 0;
+}
+.ft-distance-entry-btn-compact {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--green-400), var(--green-700));
+  color: #04120b;
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: transform 0.15s ease;
+}
+.ft-distance-entry-btn-compact:active {
+  transform: scale(0.96);
+}
+
+/* Voice input — hidden from the main UI (EXPERIMENTAL_VOICE_INPUT_ENABLED
+   flag in DistanceCard.jsx), styles kept since the code path is preserved. */
+.ft-distance-entry-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ft-voice-entry-btn {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--ink-1);
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ft-voice-entry-btn:active {
+  transform: scale(0.97);
+}
+
+.ft-measured-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ft-measured-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green-300);
+  letter-spacing: 0.02em;
+}
+.ft-measured-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+.ft-club-chip {
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--green-300);
+  background: rgba(47, 190, 127, 0.12);
+  border: 1px solid rgba(47, 190, 127, 0.28);
+  padding: 5px 10px;
+  border-radius: 20px;
+}
+.ft-distance-diff {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--distance-blue);
+}
+.ft-distance-warning {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gold);
+  line-height: 1.4;
+}
+
+.ft-voice-mini-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 16px;
+  border: 2px solid var(--red);
+  animation: ft-blink 1s ease-in-out infinite;
+}
+
+.ft-wheel-modal {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ft-wheel-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.ft-wheel-highlight {
+  position: absolute;
+  left: 4px;
+  right: 30px;
+  top: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(47, 190, 127, 0.1);
+  border-top: 1px solid rgba(47, 190, 127, 0.35);
+  border-bottom: 1px solid rgba(47, 190, 127, 0.35);
+  pointer-events: none;
+}
+.ft-wheel-col {
+  position: relative;
+}
+.ft-wheel-list {
+  height: 108px;
+  width: 44px;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.ft-wheel-list::-webkit-scrollbar {
+  display: none;
+}
+.ft-wheel-pad {
+  height: 36px;
+}
+.ft-wheel-item {
+  height: 36px;
+  width: 100%;
+  scroll-snap-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink-2);
+  opacity: 0.4;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.15s ease, color 0.15s ease, font-size 0.15s ease;
+}
+.ft-wheel-item.is-selected {
+  color: var(--ink-0);
+  opacity: 1;
+  font-size: 25px;
+  font-weight: 800;
+}
+.ft-wheel-unit {
+  margin-left: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-2);
+  align-self: center;
+}
+.ft-wheel-done-btn {
+  margin-top: 16px;
+  width: 100%;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: linear-gradient(135deg, var(--green-400), var(--green-700));
+  color: #04120b;
+  font-size: 15px;
+  font-weight: 800;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ft-wheel-done-btn:active {
+  transform: scale(0.97);
+}
+.ft-wheel-done-btn.is-neutral {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink-1);
+}
+
+.ft-dev-pin-controls {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.ft-pin-position-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.ft-pin-position-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-1);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ft-dev-badge {
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 4px;
+  line-height: 1.4;
+}
+.ft-pin-position-pills {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.ft-pin-pill {
+  flex: 1;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ft-pin-pill.is-active {
+  background: rgba(201, 162, 75, 0.16);
+  border-color: rgba(201, 162, 75, 0.4);
+  color: var(--gold);
+}
+.ft-pin-position-hint {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.ft-gallery-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 36px;
+  margin-top: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--ink-1);
+  font-size: 12px;
+  font-weight: 700;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.ft-gallery-trigger:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Overlay — "Gallery는 독립 화면이 아니라 필요할 때 잠시 나타나는 Overlay UI".
+   Anchored to the bottom of the phone frame so the header + Distance Card
+   above stay visible and untouched while it's open. */
+.ft-gallery-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+}
+.ft-gallery-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 8, 5, 0.55);
+  backdrop-filter: blur(2px);
+}
+.ft-gallery-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 58%;
+  display: flex;
+  flex-direction: column;
+  background: #0c1710;
+  border-top-left-radius: 26px;
+  border-top-right-radius: 26px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  padding: 14px 18px 22px;
+  overflow-y: auto;
+  animation: ft-sheet-up 0.22s ease-out;
+}
+.ft-gallery-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ft-gallery-sheet-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-0);
+}
+.ft-gallery-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-0);
+}
+
+.ft-gallery-category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.ft-gallery-category-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 74px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.ft-gallery-category-tile:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.06);
+}
+.ft-gallery-category-icon {
+  font-size: 22px;
+}
+.ft-gallery-category-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+
+.ft-gallery-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ft-gallery-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ft-gallery-item .ft-reaction {
+  flex: 1;
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 10px 14px;
+}
+.ft-favorite-star {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  transition: transform 0.12s ease;
+}
+.ft-favorite-star:active {
+  transform: scale(0.9);
+}
+.ft-gallery-empty {
+  margin: 12px 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ft-rights-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  border-radius: 8px;
+  background: rgba(255, 91, 76, 0.18);
+  color: #ffb2a8;
+  border: 1px solid rgba(255, 91, 76, 0.4);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ft-rights-badge.is-review_required {
+  background: rgba(201, 162, 75, 0.18);
+  color: var(--gold);
+  border-color: rgba(201, 162, 75, 0.4);
+}
+
+.ft-reaction {
+  position: relative;
+  flex: 0 1 calc(33.333% - 7px);
+  min-width: 92px;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 4px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  transition: transform 0.12s ease, background 0.2s ease, opacity 0.2s ease;
+}
+.ft-reaction:active {
+  transform: scale(0.93);
+}
+.ft-reaction.tone-green {
+  color: var(--green-300);
+}
+.ft-reaction.tone-gold {
+  color: var(--gold);
+}
+.ft-reaction.tone-red {
+  color: #ff8a7d;
+}
+.ft-reaction.tone-red:active {
+  background: rgba(255, 91, 76, 0.15);
+}
+.ft-reaction.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ft-reaction.is-disabled:active {
+  transform: none;
+}
+
+.ft-cheer-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+}
+.ft-cheer-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 7px;
+  border-radius: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ink-0);
+  transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+.ft-cheer-chip:active {
+  transform: scale(0.95);
+}
+.ft-cheer-chip.is-active {
+  border-color: rgba(47, 190, 127, 0.5);
+  background: rgba(47, 190, 127, 0.14);
+  color: var(--green-300);
+}
+.ft-cheer-chip:disabled {
+  opacity: 0.5;
+}
+
+.ft-score-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ft-score-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+.ft-score-row.is-me {
+  border-color: rgba(47, 190, 127, 0.3);
+  background: rgba(47, 190, 127, 0.06);
+}
+.ft-score-name {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.ft-score-static {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-1);
+  min-width: 24px;
+  text-align: center;
+}
+/* Score Input UX — PAR-relative primary display: companion readout is now
+   a small stack (E/+N/-N large, raw stroke count small underneath),
+   mirroring the GPS-primary/secondary pattern from the Distance screen. */
+.ft-score-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0px;
+  min-width: 28px;
+}
+.ft-score-raw {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ft-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 4px 8px;
+}
+.ft-stepper.is-locked {
+  opacity: 0.4;
+}
+.ft-stepper button {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.ft-stepper button:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+.ft-stepper button:disabled {
+  cursor: default;
+}
+/* Score Input UX 최종: this is a plain "current selection" readout, not a
+   button — there's no separate confirm step anymore, so it shouldn't
+   invite a tap the way the earlier dashed/checkmark version did. A subtle
+   neutral background just gives it its own visual slot between +/-. */
+.ft-stepper-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0px;
+  min-width: 36px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.ft-stepper-value {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-0);
+  line-height: 1.1;
+}
+.ft-stepper-raw {
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ft-hole-complete-btn {
+  margin-top: 12px;
+  width: 100%;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--green-400), var(--green-700));
+  color: #04120b;
+  font-size: 13.5px;
+  font-weight: 800;
+  transition: transform 0.15s ease;
+}
+.ft-hole-complete-btn:active {
+  transform: scale(0.97);
+}
+.ft-hole-complete-pill {
+  margin-top: 12px;
+  width: 100%;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
+  color: var(--ink-1);
+  font-size: 13px;
+  font-weight: 700;
+}
+/* TASK-010: replaces the old dead-end static pill -- final scores +
+   a way back to Home, using data already computed elsewhere. */
+.ft-round-complete-summary {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
+}
+.ft-round-complete-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-0);
+  margin-bottom: 8px;
+}
+.ft-round-complete-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ft-round-complete-thanks {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+}
+.ft-round-complete-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.ft-round-complete-name {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.ft-round-complete-score {
+  color: var(--ink-0);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Toast ---------- */
+.ft-global-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  background: rgba(20, 36, 28, 0.92);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  padding: 11px 18px;
+  border-radius: 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-0);
+  z-index: 80;
+  white-space: nowrap;
+  animation: ft-toast-in 0.25s ease both;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes ft-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes ft-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+@keyframes ft-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes ft-bar {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes ft-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ft-ripple {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes ft-ptt-pulse {
+  0%,
+  100% {
+    transform: scale(1.05);
+  }
+  50% {
+    transform: scale(1.09);
+  }
+}
+@keyframes ft-sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes ft-value-flash {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes ft-card-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(79, 168, 255, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgba(79, 168, 255, 0);
+  }
+}
+@keyframes ft-live-badge-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes ft-float-up {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--bx)), 0) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--bx)), -6px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--bx)), -64px) scale(1);
+  }
+}
+@keyframes ft-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Hide scrollbars inside the phone mock */
+.ft-home-scroll::-webkit-scrollbar,
+.ft-round-scroll::-webkit-scrollbar {
+  display: none;
+}
+.ft-home-scroll,
+.ft-round-scroll {
+  scrollbar-width: none;
+}
+
+/* Two Device PTT Foundation v0.1 — DEV test screen only */
+.ft-two-device-inner {
+  padding: 4px 2px 16px;
+}
+.ft-two-device-receiving {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(47, 190, 127, 0.12);
+  border: 1px solid rgba(47, 190, 127, 0.4);
+  color: var(--green-300);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.ft-two-device-level {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ft-two-device-dev-entry {
+  margin-top: 6px;
+  width: 100%;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ft-two-device-dev-entry:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+
+/* ============================================================
+   Real Device Mode — 실제 폰 브라우저에서 켤 때는 데스크톱 미리보기용
+   "폰 모양 테두리(.ft-phone)"를 없애고 화면을 꽉 채운다. 좁은 화면
+   + 터치 기기(coarse pointer)일 때만 적용 — 데스크톱 브라우저 창을
+   좁혀도 이 모드가 실수로 켜지지 않도록 두 조건을 함께 건다.
+   ============================================================ */
+@media (max-width: 500px) and (pointer: coarse) {
+  .ft-root {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    min-height: 100dvh;
+  }
+  .ft-phone {
+    width: 100%;
+    height: 100dvh;
+    max-width: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+}
