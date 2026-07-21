@@ -160,6 +160,19 @@ export class PttSignalingClient {
     });
   }
 
+  // RC1 Networking Recovery — distance sharing was never sent over the
+  // network at all before this; see DistanceCard.jsx/NetworkPttClient.js.
+  sendDistanceShare({ referenceDistanceM, source, holeNumber }) {
+    this._send({
+      type: "distance_share",
+      roomId: this.roomId,
+      referencePlayerId: this.userId,
+      referenceDistanceM,
+      source,
+      holeNumber,
+    });
+  }
+
   close() {
     this.ws?.close();
   }

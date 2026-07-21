@@ -207,7 +207,22 @@ await test("6. socket close 중 송신 상태 완전 정리", async () => {
   client.signaling.emit("socket_closed", {});
   assert.equal(client.audioCapture.active, false);
   assert.notEqual(client.getState().status, "transmitting");
+  // RC1-WEEK6 §1: an unexpected socket_closed now immediately begins
+  // reconnecting (not a bare "disconnected" that just sits there) — this
+  // IS the new, intentional behavior the whole Sprint built.
+  assert.equal(client.getState().connectionState, "reconnecting");
+});
+
+await test("6b. release()는 재연결을 절대 트리거하지 않음", async () => {
+  // RC1-WEEK6 §1: release() (component unmount / explicit teardown) must
+  // stay a clean, final "disconnected" — unlike socket_closed, this is
+  // never an unexpected drop, so nothing should try to reconnect after it.
+  const client = makeClient({ pttResponse: { type: "ptt_granted" } });
+  await client.connectToRoom();
+  client.release();
+  await new Promise((r) => setTimeout(r, 50));
   assert.equal(client.getState().connectionState, "disconnected");
+  assert.notEqual(client.getState().connectionState, "reconnecting");
 });
 
 await test("7. peer connection failed 중 송신 상태 완전 정리", async () => {

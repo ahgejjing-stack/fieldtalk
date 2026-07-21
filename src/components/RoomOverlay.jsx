@@ -289,6 +289,21 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     runStart();
   }
 
+  // RC1-WEEK6 Priority 2 — Explicit Leave Room. Three separate systems
+  // each own a piece of "connected to a room": the communication client
+  // (socket/WebRTC/PTT — communication.leaveRoom() cancels any pending
+  // reconnect timer too, so it can never resume after this), the Room
+  // Engine (room/member state — roomReset()), and Runtime Mode (whether
+  // Network mode is even on). All three must be torn down together or
+  // some piece would silently survive and confuse the next "팀 연결".
+  function handleLeaveRoom() {
+    communication.leaveRoom?.();
+    dispatch(actions.roomReset());
+    setNetworkCommunicationEnabled(false);
+    onClose();
+    onToast("팀 연결을 종료했습니다");
+  }
+
   return (
     <div className="ft-gallery-overlay">
       <div className="ft-gallery-scrim" onClick={onClose} />
@@ -302,6 +317,11 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
             <X size={16} strokeWidth={2.2} />
           </button>
         </div>
+        {networkCommunicationEnabled && (
+          <button type="button" className="ft-room-leave-btn" onClick={handleLeaveRoom}>
+            팀 연결 종료
+          </button>
+        )}
 
         {/* 동반자 초대 · 참여 상태 (§4) */}
         <div className="ft-room-section">
@@ -399,7 +419,8 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
             {isDevMode && networkCommunicationEnabled && (
               <p className="ft-pin-position-hint" style={{ marginTop: 2 }}>
                 DEV conn={communication.connectionState ?? "?"} members={communication.members?.length ?? 0}{" "}
-                lastError={communication.lastError ?? "none"}
+                lastError={communication.lastError ?? "none"} retry={communication.retryCount ?? 0}{" "}
+                nextRetrySec={communication.nextRetrySec ?? "-"}
               </p>
             )}
             {isDevMode && (

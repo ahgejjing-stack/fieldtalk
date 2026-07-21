@@ -140,6 +140,20 @@ export function CommunicationProvider({
       isTesting: state.isTesting ?? false,
       lastError: state.lastError,
       connectionState: state.connectionState ?? "disconnected",
+      retryCount: state.retryCount ?? 0,
+      nextRetrySec: state.nextRetrySec ?? null,
+      reconnectEvent: state.reconnectEvent ?? null,
+      clearReconnectEvent: clientRef.current.clearReconnectEvent
+        ? () => clientRef.current.clearReconnectEvent()
+        : null,
+      leaveRoom: clientRef.current.leaveRoom ? () => clientRef.current.leaveRoom() : null,
+      receivedDistanceShare: state.receivedDistanceShare ?? null,
+      shareDistance: clientRef.current.shareDistance
+        ? (payload) => clientRef.current.shareDistance(payload)
+        : null,
+      clearReceivedDistanceShare: clientRef.current.clearReceivedDistanceShare
+        ? () => clientRef.current.clearReceivedDistanceShare()
+        : null,
       remoteSpeakerUserId: state.remoteSpeakerUserId ?? null,
       remoteSpeakerName: state.remoteSpeakerName ?? null,
       isReceiving: state.isReceiving ?? false,

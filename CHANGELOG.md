@@ -2,6 +2,193 @@
 
 ## Unreleased
 
+### Join Flow 100% 성공을 최우선으로 — 실제 재현 시나리오로 검증
+
+변경 파일: `App.jsx`, `HomeScreen.jsx`.
+
+**발견한 중대한 위험**: 지금까지 여러 Sprint에 걸쳐 실기기 테스트를 반복하신 두 대의 폰은, 이번에 만든 "이름 입력 화면" 조건(`!hasStoredIdentity`, 저장된 identity가 아예 없을 때만)으로는 **걸러지지 않았을 가능성이 높다** — 이전 세션들에서 이미 "재식"이 저장돼 있을 것이기 때문이다. 즉 지난 턴에 만든 수정이 정작 Founder님 실기기에서는 발동하지 않았을 수 있었다.
+
+**수정**: 조건을 "저장된 게 아예 없을 때"에서 **"현재 identity가 기본값(재식)일 때"**로 바꿨다 — 새 기기든, 예전에 테스트하다 재식으로 저장된 기기든 상관없이 초대 링크로 들어온 사람이 재식이면 이름을 다시 묻는다.
+
+**링크 공유 방식 개선**: 클립보드 복사 대신 **Web Share API(네이티브 공유 시트)를 우선 사용** — 실제 폰에서 카톡/문자로 바로 보낼 수 있어 훨씬 확실하다. 지원 안 되는 환경에서는 기존 클립보드 복사로 자동 폴백.
+
+#### 실제 재현 테스트(가장 위험한 케이스로) — 전체 흐름 성공
+Phone B의 localStorage에 **미리 "재식"을 저장**해둔 뒤(실제 테스트폰 상황을 그대로 재현) 시작:
+
+```
+[서버] ROOM JOIN SUCCESS player_jaesik, participants: 1
+B: 이름 입력 화면 표시 = true  ← 예전 재식 저장돼 있어도 정상적으로 뜸
+B: "재근" 입력 → 새 고유 ID로 참가
+[서버] ROOM JOIN SUCCESS player_1784620027217_17xa30, participants: 2
+[서버] PEER JOIN BROADCAST recipients: 1
+B: 마이크 "확인 완료"
+A가 보는 참여 현황: "참여 2명"
+[서버] round_started playerCount: 2
+Round 진입: A=true B=true
+[서버] PTT REQUEST granted: true
+A→B PTT: B가 받은 배너 = "재식님이 말하는 중"
+```
+
+Host 생성 → 링크 공유 → Join → 2명 표시 → PTT 음성 송신까지 한 번에, 가장 위험한 조건(기존 재식 identity 잔존)에서도 확인했다. 단위 테스트 61개 무회귀.
+
+### RC2 Additional Feedback 대응
+
+변경 파일: `HomeScreen.jsx`, `App.jsx`.
+
+**②마이크 권한 타이밍 수정**: 기존엔 `connectToRoom()` 성공 후(네트워크 왕복 이후) 비동기로 마이크 권한을 미리 요청하고 있었다 — 실제 필요해서가 아니라 WebRTC offer/answer 타이밍 최적화를 위한 것으로 정당한 이유가 있었다(이건 그대로 유지). 다만 iOS/WebKit은 "사용자가 방금 누른 제스처"와 연결이 끊긴 비동기 호출에서는 권한창을 예측 불가능한 시점에 띄우는 경우가 있다 — "왜 지금 뜨지?"라는 느낌이 정확히 이 문제로 보인다. "팀 연결" 탭과 "참가하기" 탭 각각에서 **동기적으로** 마이크 권한을 한 번 더 요청하도록 추가했다(즉시 스트림 해제, 실제 스트림은 기존 로직이 그대로 만듦) — 권한이 그 탭 자체와 명확히 연결되게. 실제 테스트로 "팀 연결" 탭 즉시 `getUserMedia` 1회 호출 확인, 이후 전체 흐름(코스 선택→마이크→Round→PTT) 무회귀 확인.
+
+**③ 가짜 상태바 재확인**: 코드를 다시 확인했고, iPhone 13/14 Pro 에뮬레이션으로 재검증한 결과 **현재 코드에서는 정상적으로 제거되고 있다**(`statusBarInDOM: false`). 실기기에서 여전히 보인다면, 가장 유력한 원인은 **이 수정이 반영되기 전에 배포된 Vercel 빌드를 보고 계신 것**이다 — 최신 코드로 재배포 후 다시 확인 부탁드린다.
+
+**④ Preview Simulation / Mock Slot 정리 계획**: 다음 Sprint에서 진행 제안 — Production에서는 Home 화면의 재근/광천/해란 데모 슬롯을 완전히 숨기고 실제 Room 멤버 목록만 표시. DEV 모드에서는 그대로 유지(개발 편의 목적). 이번 턴엔 시간 제약으로 착수하지 못했다 — 실제 실기기 검증(①②③⑤⑥) 우선.
+
+**①⑤⑥⑧**: 코드 설명이 아니라 실기기 증빙이 필요한 항목들이다. **이 환경은 외부 네트워크가 차단돼 있어 Render/Vercel 배포, 실제 폰 촬영, 실제 서버/클라이언트 로그 수집을 제가 직접 할 수 없다.** 코드는 준비됐지만 이 부분은 Founder님이 실행하셔야 한다.
+
+단위 테스트 61개 무회귀.
+
+### 두 번째 사용자가 참가할 방법이 없던 진짜 원인 — 발견 및 수정
+
+Founder님의 정확한 질문("두 번째 휴대폰은 어디서 참가하나요?")을 파고들다가, 이전 Sprint들에서 놓친 근본적인 구멍을 찾았다.
+
+**진짜 원인**: 저장된 identity가 없는 완전히 새 기기는 조용히 `DEFAULT_IDENTITY_USER_ID`("player_jaesik"/재식)로 시작한다 — **호스트와 완전히 같은 identity다.** 실서비스에는 "당신은 누구입니까"를 묻는 화면이 한 번도 없었다 — DEV 전용 Identity Switch 화면만 있었고, 그건 프로덕션에서 의도적으로 숨겨져 있다(Preview Simulation 정직성 작업의 일부). 즉 **실제 두 번째 사람이 초대 링크를 눌러도, 실서비스 UI로는 자기 자신이 될 방법이 없었다** — 재근/광천/해란이 "Mock 데이터로 보인다"는 지적은 정확했다. 그 슬롯들은 애초에 실제 참가자를 위한 게 아니라 로컬 데모 전용 하드코딩된 이름이었다.
+
+변경 파일: 신규 `NameEntryScreen.jsx`, `App.jsx`, `IdentityProvider.jsx`, `app.css`.
+
+**수정**: `?join=CODE` 링크로 들어왔는데 저장된 identity가 아직 없는 기기에서만 보이는 최소한의 "이름을 알려주세요" 화면을 추가했다. 이름을 입력하면 고유한 새 userId를 생성해 `setIdentity()`(기존 함수 재사용 — 저장 후 새로고침)를 호출하고, 새로고침 후에도 URL의 `?join=`은 그대로 남아있어 기존 자동 참가 로직이 이제는 진짜로 다른 identity로 정상 작동한다. 호스트나 이미 identity가 있는 기기는 전혀 영향 없다.
+
+**실제 검증**(진짜 완전히 새로운 브라우저 프로필로, localStorage 0인 상태에서 시작):
+```
+A: 초대 링크 복사 → 링크 확보
+B(완전히 새 기기): 링크 접속 → 이름 입력 화면 표시 = true
+B: "재근" 입력 → 제출 → 마이크 상태 = "확인 완료"
+A가 보는 참여 현황: "참여 2명"  ← 핵심 — 실제로 서로 다른 두 사람으로 잡힘
+```
+
+단위 테스트 61개 무회귀.
+
+### RC2 — Secure Real-Device Test Environment 대응
+
+변경 파일: `App.jsx`, `TwoDeviceTestScreen.jsx`.
+
+**정확한 지적에 동의**: "Vercel HTTPS 주소만 열면 된다"는 제 이전 설명은 불완전했다. Signaling 서버는 여전히 로컬 PC의 `ws://localhost:8787`이라 Vercel 프런트엔드와 자동으로 연결되지 않고, HTTPS 페이지에서 `ws://` 시도는 Mixed Content로 차단된다.
+
+**Mixed Content 보호 추가**: `VITE_SIGNALING_URL`이 실수로 `ws://`로 설정된 채 HTTPS 페이지에서 로드되면 자동으로 `wss://`로 승격한다. 5가지 시나리오(정상 프로덕션 설정, 실수로 ws:// 설정한 프로덕션, 로컬 PC 개발, 폰 LAN HTTP, 폰이 실수로 HTTPS로 LAN IP 접속한 극단 케이스) 전부 격리된 로직 검증으로 확인했다 — 전부 올바른 스킴으로 해석됨.
+
+**STUN 서버 추가**: `iceServers: []` → 공개 Google STUN 서버 2개. 비용도 인프라도 필요 없어 즉시 추가했다. TURN은 별도 인프라(서버 운영)가 필요해 이번엔 추가하지 않음 — 아래 STUN/TURN 정리 참고.
+
+#### STUN/TURN 현황 정리 (요청하신 항목)
+- **이번 RC2 테스트 범위**: 동일 Wi-Fi 한정으로 진행하는 게 맞다고 판단. 같은 Wi-Fi에서는 로컬 후보(mDNS/LAN candidate)로도 직접 연결이 성립하는 경우가 많아 STUN 없이도 종종 동작하지만, 이번에 STUN을 추가해 성공률을 더 높였다.
+- **STUN 설정 여부**: 이번에 추가함(공개 Google STUN 2개).
+- **TURN 미적용 시 예상 제한**: Symmetric NAT(많은 통신사 LTE/5G가 이 방식)나 엄격한 방화벽 조합에서는 STUN만으로 P2P 연결 경로를 못 찾을 수 있다 — 이 경우 TURN 릴레이 없이는 연결 자체가 안 될 수 있다.
+- **향후 TURN 도입 계획**: Wi-Fi↔LTE, LTE↔LTE 테스트에서 실패가 확인되면 그때 도입 검토(예: coturn 자체 운영 또는 Twilio/Cloudflare 같은 관리형 TURN 서비스) — 지금은 범위 밖으로 유지.
+
+#### 아직 안 된 것 (정직하게 보고)
+**실제 배포는 제가 할 수 없습니다.** 이 환경은 외부 네트워크가 차단돼 있어 Render/Vercel에 직접 배포할 수 없다 — 코드는 준비됐지만, 실행은 Founder님이 해주셔야 한다. 아래에 정확한 단계를 정리했다.
+
+단위 테스트 61개 무회귀, 번들 체크 통과.
+
+### Networking Recovery Sprint — 실기기 2대 테스트 결과 대응
+
+Founder 실기기 테스트에서 "두 기기가 실제로 연결되지 않는다"는 심각한 보고를 받았다. 지금까지 RC1 전체(WEEK1~8)에서 "검증했다"고 말한 모든 테스트는 같은 기기 안의 두 브라우저 탭이 localhost로 통신하는 방식이었다는 걸 인정한다 — 실제 기기 간 네트워크 도달성, 실제 로컬 LAN 배포 구성, 실제 터치 이벤트는 이번이 처음이다.
+
+변경 파일: `App.jsx`, `TwoDeviceTestScreen.jsx`, `DistanceCard.jsx`, `NetworkPttClient.js`, `PttSignalingClient.js`, `CommunicationProvider.jsx`, `signalingServer.js`, `app.css`.
+
+#### ① Signaling URL이 기기 상대적("localhost")이었던 문제 — 수정 및 실측 검증됨
+Founder는 PC에서 `npm run dev`로 Vite+signaling 서버를 띄우고 폰은 LAN IP(Vite의 "Network:" 주소)로 접속하는 구조였다. 그런데 앱 내부 signaling 주소는 `ws://localhost:8787`로 하드코딩돼 있었다 — 폰 입장에서 "localhost"는 자기 자신이라 아무 서버도 없다. `window.location.hostname` 기준으로 자동 계산하도록 수정(`App.jsx`, `TwoDeviceTestScreen.jsx`) — `.env` 파일이나 수동 IP 입력 없이, localhost로 열면 기존과 동일하게, LAN IP로 열면 자동으로 그 IP를 쓴다.
+
+**실측 검증**: 샌드박스의 실제 LAN IP(`192.0.2.2`, localhost 아님)로 두 세션을 접속시켜 재현. 서버 로그에서 `player_jaesik`, `player_jaegeun` **둘 다** 정상 Join 확인, `participants: 2`, `[PEER JOIN BROADCAST] recipients: 1` 확인. A 화면에서 "참여 2명" 정상 표시.
+
+#### ② 거리 공유가 네트워크로 전송된 적이 없었던 문제 — 수정됨(부분 검증)
+`DistanceCard.jsx`의 "팀에 전송했습니다" 토스트는 거짓이었다 — 로컬 Round Engine에만 dispatch되고 서버로는 아무것도 안 갔다. 서버에 `distance_share` 릴레이(`[DISTANCE SHARE]`/`[DISTANCE SHARE BROADCAST]` 로그 포함) 추가, `PttSignalingClient.sendDistanceShare()`/`NetworkPttClient.shareDistance()`/수신 시 `App.jsx`가 로컬 Round Engine에 반영하는 왕복 경로 전체를 신규 구현. 단위 테스트·번들 체크는 통과했지만, **2인 실기기 시뮬레이션에서 다른 이슈(아래 ④) 때문에 end-to-end로 끝까지 확인하지 못했다** — 정직하게 남긴다.
+
+#### ③ 마이크 버튼 터치 선택 메뉴 버그 — 코드 수정됨(실기기 미검증)
+`.ft-room-member-row`를 비롯해 앱 전체에 `user-select`/`-webkit-touch-callout`/`touch-action` 보호가 전혀 없었다 — 실기기 롱프레스가 OS 텍스트 선택 메뉴로 새는 게 구조적으로 당연했다. `.ft-phone`(앱 전체 루트)과 `.ft-ptt-btn`에 보호 추가. 이 앱엔 텍스트 입력이 필요한 곳이 없어 부작용 없이 전역 적용 가능하다고 판단했다. **실제 터치스크린으로는 검증 못함 — Playwright는 마우스 이벤트만 시뮬레이션하므로 이 종류의 버그를 애초에 잡아낼 수 없었다는 것도 이번에 확인했다.**
+
+#### ④ 마이크가 "사용불가"인 진짜 이유 — 코드 버그 아님, 브라우저 플랫폼 제약
+LAN IP 시뮬레이션 중 발견: **`http://192.0.2.2:...`(평문 HTTP + localhost 아닌 IP)로 접속하면 `navigator.mediaDevices` 자체가 완전히 `undefined`가 된다.** `isSecureContext: false` — 브라우저가 마이크 API 자체를 거부하는 것으로, 앱 코드로 고칠 수 있는 문제가 아니다. Web Platform 표준상 `getUserMedia`는 HTTPS 또는 진짜 `localhost`에서만 동작한다.
+
+**이게 의미하는 것**: Founder님의 현재 로컬 LAN 테스트 방식(`npm run dev` + 폰에서 IP로 접속)으로는 **마이크/PTT 관련 기능을 원천적으로 검증할 수 없다** — ①의 signaling 수정과 무관하게 항상 막힌다. 참여 상태·거리 공유처럼 마이크가 필요 없는 기능은 이 방식으로 테스트 가능하지만, PTT는 다음 중 하나가 필요하다:
+- 이미 배포된 Vercel 주소(HTTPS 자동 제공)로 폰 테스트, 또는
+- 로컬에 HTTPS 설정(mkcert 등) 또는 ngrok류 터널 사용
+
+#### ⑤ 상세 서버 로깅 — 요청하신 형식으로 추가
+`[CLIENT CONNECTED]`(remoteAddress 포함), `[ROOM JOIN REQUEST]`/`[ROOM JOIN SUCCESS]`(participants 카운트 포함) 분리, `[PEER JOIN BROADCAST]`(recipients 카운트), `[DISTANCE SHARE]`/`[DISTANCE SHARE BROADCAST]`, `[DISCONNECT]`(remainingParticipants 포함) — 전부 실측 로그로 위 ①에서 확인.
+
+#### 확인하지 못한 것 (정직하게 보고)
+- 거리 공유의 완전한 end-to-end(Phone B 화면에 실제로 숫자가 바뀌는 것)는 확인 못했다.
+- PTT 자체는 ④의 브라우저 제약 때문에 이 테스트 방식으로는 애초에 검증 불가능하다는 것만 확인했고, 실제 음성 송수신은 확인 못했다.
+- Session Resume은 착수하지 못했다(Founder님도 우선순위 낮다고 명시).
+- Participant Count/Peer 생성/PTT 활성화는 ①이 고쳐졌으니 자연스럽게 따라올 가능성이 높지만, ④의 마이크 제약과 얽혀 있어 HTTPS 환경에서 재검증이 필요하다.
+
+단위 테스트 61개 무회귀, 번들 체크 통과.
+
+### RC1-WEEK8 — Target Selection Root Cause + End-to-End PTT Closure (완료)
+
+변경 파일: 0개 순변경(`RoundScreen.jsx`에 임시 디버그 훅을 추가했다가 검증 후 완전히 제거 — `NetworkPttClient.js`는 WEEK7 상태 그대로, 코드 수정 불필요했음이 이번에 증명됨).
+
+#### Priority 1 — Root Cause 규명 (완료)
+`window.__ft_debug_dump()` 임시 훅으로 요청된 7가지 값을 재연결 전/클릭 직후/PTT 시점마다 직접 캡처했다.
+
+**진짜 원인**: `selectedTargets`는 RoundScreen의 로컬 state이고, 재연결 시 RoundScreen이 unmount되지 않으므로 **재연결 전후로 선택 상태가 그대로 유지된다** — 이것 자체는 정상이고 Priority 3이 권장한 정책과 정확히 일치한다. 문제는 **제 테스트 스크립트**였다: 재연결 후 "새로 선택해야 한다"고 가정하고 대상 행을 한 번 더 클릭했는데, 이미 선택된 상태였으므로 그 클릭이 실제로는 **선택 해제(toggle-off)** 였다. `selectedTargetIds`가 `[]`가 된 시점을 정확히 잡아냈다: 재연결 직후 `["player_jaegeun"]`(유지됨) → 클릭 직후 `[]`(토글로 해제됨).
+
+#### Priority 2 — 테스트 자동화 실패 vs 제품 실패 분리 (완료)
+- B(재근)→A(재식) 방향이 매 회차 실패하는 별개의 문제도 같은 방식으로 발견: `rows[rows.length-1]`로 "마지막 행 = 상대방"이라고 가정한 게 A 화면에서는 맞았지만(본인이 첫 번째), B 화면에서는 틀렸다(본인이 마지막 → 자기 자신을 선택하려 한 것). "(나)"가 포함된 행을 제외하고 상대방을 텍스트 기준으로 찾도록 수정하니 즉시 해결됐다.
+- 결론: **두 문제 모두 제품 코드가 아니라 테스트 스크립트의 가정 오류**였다.
+
+#### Priority 3 — 재연결 후 선택 정책 (코드 변경 불필요, 이미 만족됨)
+"재연결 전 선택된 대상이 현재 멤버 목록에 있으면 유지" 정책은 로컬 state가 자연스럽게 유지되는 기존 구조로 이미 충족되고 있었다. 화면 표시(`selectedTargets`)와 송신용 대상(`targetUserIds`)도 애초에 같은 단일 state에서 파생되는 구조라 별도로 관리되고 있지 않았다.
+
+#### Priority 4 — End-to-End 완료 (실제 검증됨)
+재연결 3회 반복, 매 회차 A→B 3회 + B→A 3회, 총 18회 PTT 시도 — **18/18 성공**.
+
+```
+사이클 1: A→B = [성공,성공,성공], B→A = [성공,성공,성공]
+사이클 2: A→B = [성공,성공,성공], B→A = [성공,성공,성공]
+사이클 3: A→B = [성공,성공,성공], B→A = [성공,성공,성공]
+활성 WebSocket: 1개 (총 3회 재연결에 걸쳐 총 3개 생성, 중복/누수 없음)
+selectedTargetIds: 매 사이클 ["player_jaegeun"] 유지 확인
+targetUserIds(startTransmit 실제 인자): 매 사이클 ["player_jaegeun"] 일치
+콘솔 에러: 0건
+```
+
+#### 최종 판단
+**"재연결 후 사용자가 대상을 선택하고, 양방향 PTT를 반복해서 실제로 사용할 수 있음"을 실제로 확인했다.** RC1 네트워크 안정성 이슈를 여기서 종료할 수 있는 근거가 마련됐다.
+
+### RC1-WEEK7 — WebRTC Recovery After Signaling Reconnect (부분 검증)
+
+변경 파일 1개(`NetworkPttClient.js`).
+
+**Priority 1 (결정적 offer initiator)**: `_shouldOfferTo(userId)` — 두 userId를 문자열로 비교해 더 작은 쪽만 offer. `member_online` 핸들러를 이 규칙으로 교체("이미 방에 있던 쪽이 offer"라는 기존 방식은 양쪽이 동시에 재연결하는 경우 "먼저 있던 쪽"이 정의되지 않는 문제가 있었음).
+
+**Priority 2 (세션 정리)**: `_cleanupConnection`이 이미 transport/ICE queue/remote media/speaker state를 정리하고 있었음을 확인(`WebRtcTransport.close()`가 pending ICE candidate까지 정리). `_peerStates` Map 신규 추가, cleanup 시 함께 정리. 마이크 스트림은 요청대로 유지.
+
+**Priority 3 (멤버 재조정)**: `_reconcileMembers(members)` — room_joined의 members를 authoritative로 사용. 목록에 없는 멤버는 transport 제거, 있는데 transport 없는 멤버는 offer 규칙에 따라 연결 시작, 본인 userId는 필터링, 중복 생성은 기존 `_transports.has()` 체크로 방지.
+
+**Priority 4 (상태 구분)**: 버그 하나 발견 — 기존 코드는 개별 peer의 raw RTCPeerConnection 상태 문자열이 전체 `connectionState`를 그대로 덮어쓰고 있었다(신호 계층과 미디어 계층 상태가 뒤섞여 있었음). `_peerStates`로 분리하고, `media_reconnecting`(신호는 복구, 피어 대기 중) 상태를 신규 도입. 1인 Room은 room_joined만으로 즉시 `connected`, 2인 이상은 실제 피어 연결이 `connected` 상태가 된 뒤에만 "팀 연결이 복구되었습니다" 토스트 발생(`_maybeCompleteMediaReconnect`).
+
+#### 실제로 확인된 것 (직접 증거)
+2인 실제 테스트에서 디버그 로그로 직접 추적:
+- 재연결 후 offer/answer가 정확히 한 번씩만 오간 것(glare 없음) — 결정적 규칙이 실제로 작동함을 확인.
+- **양쪽 peer connection이 실제로 "connected" 상태에 도달하는 것을 직접 확인** — WebRTC 계층 자체는 복구됨.
+
+#### 확인하지 못한 것 (정직하게 보고)
+같은 테스트에서 재연결 후 PTT를 시도했을 때 "먼저 전달할 대상을 선택하세요" 토스트가 떴다 — 이는 **테스트 스크립트의 대상 선택 클릭이 실패한 것으로 보이며**, 여러 방식(요소 재조회, 좌표 클릭, bounding box 확인)으로 원인을 추적했지만 시간 제약으로 완전히 규명하지 못했다. Peer connection 자체는 "connected"로 확인됐기 때문에 WebRTC 복구는 성공한 것으로 보이나, **"재연결 후 실제 양방향 음성 PTT 반복 사용"이라는 최종 완료 기준은 아직 end-to-end로 확인하지 못했다.**
+
+Required Verification A~G는 완료하지 못함. 단위 테스트 55개(NetworkPttClient 16개 포함) 무회귀만 확인.
+
+### RC1 긴급 조사 — Vercel Production Socket 요청 0건 (Root Cause 해결)
+
+변경 파일 1개(`HomeScreen.jsx`).
+
+**보고된 증상**: Vercel Production에서 콘솔 에러 없음, WebSocket 요청 자체가 0개.
+
+**Root Cause 추적 결과**: 코드 버그가 아니라 흐름 설계의 구멍이었다. `CommunicationProvider`의 `connectToRoom()` 호출부와 `useEffect` 의존성 배열은 정상이었고, RC1-WEEK4 CTA 구조 변경에서도 제거된 게 없었다. 문제는 production에서 `networkCommunicationEnabled`를 켜는 **유일한 방법(초대 링크 복사 버튼)이 Home 화면에 있고, Room Overlay 흐름(동반자 초대→마이크→코스→START) 안에는 그걸 하라는 신호가 전혀 없었다는 것**. "팀 연결"만 누르고 자연스럽게 Overlay를 진행하면 `networkConfig`가 만들어지는 코드 자체가 실행되지 않아 `VITE_SIGNALING_URL`을 읽는 지점까지 도달하지 못했다 — 정확히 "socket 요청이 0개"라는 관찰과 일치.
+
+**실제 재현**: production(non-DEV) 빌드에서 "팀 연결"만 탭하고 초대 링크 복사를 안 하면 `WebSocket 개수: 0` 확인.
+
+**수정**: "Room이 생기면 네트워킹도 함께 켜진다"로 불변식을 단순화 — `roomCreate`/`roomJoinByCode`가 호출되는 모든 지점(`handleTeamConnect`, `toggleInvite`의 lazy room 생성, `handleJoinByCode`)에서 즉시 `setNetworkCommunicationEnabled(true)`. 더 이상 별도 버튼에 의존하지 않는다.
+
+**검증**: 수정 후 "팀 연결" 한 번만 탭 → `WebSocket 개수: 1`, URL 정상 확인. 초대 링크 복사를 아예 안 거치는 Main-to-Main 전체 흐름(Room 생성→코드 참가→마이크→Round 진입→PTT)도 재확인 — 정상 작동. 단위 테스트 54개 무회귀.
+
 ### Deployment Pre-Flight — Render PORT + PWA Manifest
 
 변경 파일 5개(`server/signalingServer.js`, `server/miniWebSocketServer.js`, `index.html`, 신규 `public/manifest.webmanifest` + 아이콘 3개).

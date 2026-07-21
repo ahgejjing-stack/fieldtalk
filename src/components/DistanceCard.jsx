@@ -13,6 +13,7 @@ import { courseReferenceService, courseProviderA, courseProviderB } from "../cou
 import { TEST_PLAYER_LOCATIONS } from "../course/testCourseData.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
 import { RUNTIME_MODES } from "../config/runtimeMode.js";
+import { useCommunication } from "../context/useCommunication.js";
 
 // Sprint 5.2 — Information Hierarchy: wind moved out of the header (a
 // standalone line competing with hole/par/score) into the same visual
@@ -73,6 +74,7 @@ function formatSignedDiff(diff) {
 export default function DistanceCard({ onToast }) {
   const { round, meId, dispatch, actions } = useRound();
   const { mode: runtimeMode, setMode: setRuntimeMode, locationProvider } = useRuntimeMode();
+  const communication = useCommunication(); // RC1 Networking Recovery
   const me = round.players.find((p) => p.id === meId);
   const hole = selectCurrentHole(round);
   const greenSelection = selectGreenSelection(round);
@@ -188,6 +190,14 @@ export default function DistanceCard({ onToast }) {
         runtimeMode,
       })
     );
+    // RC1 Networking Recovery — this was the missing piece: the dispatch
+    // above only ever updated MY OWN local state. Teammates never
+    // actually received a share until this line existed.
+    communication.shareDistance?.({
+      referenceDistanceM: value,
+      source,
+      holeNumber: round.currentHoleNumber,
+    });
     const meName = me?.name ?? "나";
     if (onToast) onToast(`${meName} 기준 ${calc.referenceDistanceM}m를 팀에 전송했습니다.`);
     speakText("팀원에게 거리를 공유했습니다.", { language: "ko-KR" });

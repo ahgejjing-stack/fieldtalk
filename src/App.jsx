@@ -14,12 +14,67 @@ import { CommunicationProvider } from "./context/CommunicationProvider.jsx";
 import { COMMUNICATION_MODES } from "./config/communicationMode.js";
 import { IdentityProvider } from "./context/IdentityProvider.jsx";
 import { useIdentity } from "./context/useIdentity.js";
+import { DEFAULT_IDENTITY_USER_ID } from "./identity/runtimeIdentity.js";
+import NameEntryScreen from "./components/NameEntryScreen.jsx";
 import { useCommunication } from "./context/useCommunication.js";
 import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
 
-const DEFAULT_SIGNALING_URL =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SIGNALING_URL) ||
-  "ws://localhost:8787";
+function resolveDefaultSignalingUrl() {
+  const isHttpsPage = typeof window !== "undefined" && window.location && window.location.protocol === "https:";
+
+  const envUrl = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SIGNALING_URL;
+  if (envUrl) {
+    // Mixed Content protection: an HTTPS page can never open a plain
+    // ws:// connection — the browser blocks it outright, silently, with
+    // no error the user would ever see. If VITE_SIGNALING_URL was ever
+    // misconfigured as ws:// for an HTTPS deployment, upgrade it rather
+    // than fail invisibly.
+    if (isHttpsPage && envUrl.startsWith("ws://")) return envUrl.replace(/^ws:\/\//, "wss://");
+    return envUrl; // explicit override always wins (production/Vercel+Render)
+  }
+
+  // Real-device LAN testing fix: a hardcoded "localhost" fallback is
+  // device-relative — it silently fails on every phone except whichever
+  // single machine happens to be running the signaling server itself.
+  // Deriving from window.location.hostname instead means: loaded the
+  // page via http://localhost:5173 -> ws://localhost:8787 (unchanged
+  // behavior); loaded via http://192.168.x.x:5173 (a phone on the same
+  // LAN, via Vite's "Network:" URL) -> ws://192.168.x.x:8787
+  // automatically, no .env file or manual IP entry required.
+  if (typeof window !== "undefined" && window.location && window.location.hostname) {
+    const scheme = isHttpsPage ? "wss" : "ws";
+    return `${scheme}://${window.location.hostname}:8787`;
+  }
+  return "ws://localhost:8787";
+}
+const DEFAULT_SIGNALING_URL = resolveDefaultSignalingUrl();
+
+// Real Device Status Bar Fix — same condition as the .ft-phone/.ft-root
+// "real device mode" CSS media query (narrow viewport + coarse/touch
+// pointer). Used here to conditionally MOUNT (not just visually hide)
+// the decorative preview-only StatusBar, so it's never in the DOM at all
+// on a real phone, where the OS's own status bar already exists and
+// would otherwise show duplicated underneath it.
+const REAL_DEVICE_QUERY = "(max-width: 500px) and (pointer: coarse)";
+function useIsRealDeviceViewport() {
+  const [isRealDevice, setIsRealDevice] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia(REAL_DEVICE_QUERY).matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(REAL_DEVICE_QUERY);
+    const handler = (e) => setIsRealDevice(e.matches);
+    // Safari <14 only supports the deprecated addListener/removeListener.
+    if (mql.addEventListener) mql.addEventListener("change", handler);
+    else mql.addListener(handler);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", handler);
+      else mql.removeListener(handler);
+    };
+  }, []);
+  return isRealDevice;
+}
 
 /**
  * CommunicationBridge — Two Device PTT Bidirectional Hardening v0.2 Part
@@ -55,7 +110,12 @@ function CommunicationBridge({ children }) {
           displayName: identity.displayName,
           deviceSessionId: identity.deviceSessionId,
         },
-        iceServers: [], // §2 note carried over from v0.1: empty works for same-machine/same-network, real deployment injects STUN/TURN via config
+        // RC2 review: STUN costs nothing and needs no infrastructure --
+        // public servers are free and widely used for exactly this.
+        // TURN is a different story (needs a real server, see the
+        // STUN/TURN review in this Sprint's report) and is NOT added
+        // here.
+        iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
       }
     : null;
   return (
@@ -73,7 +133,8 @@ function AppShell() {
   const identity = useIdentity();
   const communication = useCommunication();
   const { room, dispatch: roomDispatch, actions: roomActions } = useRoom();
-  const { networkCommunicationEnabled, setNetworkCommunicationEnabled } = useRuntimeMode();
+  const { networkCommunicationEnabled, setNetworkCommunicationEnabled, mode: courseRuntimeMode } = useRuntimeMode();
+  const isRealDevice = useIsRealDeviceViewport();
 
   const showToast = (msg) => {
     clearTimeout(toastTimer.current);
@@ -130,6 +191,20 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communication.members, networkCommunicationEnabled, room?.id]);
 
+  // RC1-WEEK6 §1.8 — reconnection toasts, at AppShell level (not inside
+  // RoomOverlay) specifically because a real disconnect is most likely
+  // to happen mid-round, and RoomOverlay isn't mounted on the Round
+  // screen. This is the one place that sees every screen.
+  useEffect(() => {
+    const event = communication.reconnectEvent;
+    if (!event) return;
+    if (event === "reconnecting") showToast("연결을 다시 시도하고 있습니다.");
+    else if (event === "reconnected") showToast("팀 연결이 복구되었습니다.");
+    else if (event === "give_up") showToast("연결이 복구되지 않았습니다. 네트워크를 확인해 주세요.");
+    communication.clearReconnectEvent?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.reconnectEvent]);
+
   // Runtime Identity v0.4 §9 — the MEMBER side of round_start signaling.
   // The host already dispatched locally in RoomOverlay.jsx's runStart();
   // this effect is what makes the OTHER browser(s) follow along, using
@@ -174,10 +249,29 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communication.roundStartedPayload]);
 
+  // RC1 Networking Recovery — the receiving side of distance sharing.
+  // The sender already applied their own share locally (DistanceCard.jsx
+  // dispatches directly); this is what makes a TEAMMATE's share actually
+  // show up on MY screen, which never happened before this Sprint.
+  useEffect(() => {
+    const payload = communication.receivedDistanceShare;
+    if (!payload) return;
+    dispatch(
+      actions.teamDistanceShare({
+        referencePlayerId: payload.referencePlayerId,
+        referenceDistanceM: payload.referenceDistanceM,
+        source: payload.source,
+        runtimeMode: courseRuntimeMode,
+      })
+    );
+    communication.clearReceivedDistanceShare?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.receivedDistanceShare]);
+
   return (
     <div className="ft-root">
       <div className="ft-phone">
-        <StatusBar />
+        {!isRealDevice && <StatusBar />}
         {screen === "splash" && <SplashScreen onDone={() => setScreen("home")} />}
         {screen === "home" && (
           <HomeScreen
@@ -203,18 +297,63 @@ function AppShell() {
   );
 }
 
+// RC2 real-device fix — sits inside IdentityProvider (needs useIdentity())
+// and decides, once, whether this device needs a name before anything
+// else runs. Everyone else (the host, anyone who already has a stored
+// identity, anyone not arriving via a join link) sees no change at all.
+function AppGate() {
+  const identity = useIdentity();
+  const [pendingJoinCode] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("join");
+  });
+
+  const needsName = !!pendingJoinCode && identity.userId === DEFAULT_IDENTITY_USER_ID;
+
+  if (needsName) {
+    return (
+      <div className="ft-root">
+        <div className="ft-phone">
+          <NameEntryScreen
+            roomCode={pendingJoinCode}
+            onSubmit={(displayName) => {
+              // RC2 mic permission timing fix — same reasoning as
+              // handleTeamConnect in HomeScreen.jsx: tie the permission
+              // request to this exact tap. A grant persists per-origin
+              // across the reload setIdentity() triggers, so the
+              // rejoined page won't need to prompt again later.
+              if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+                navigator.mediaDevices
+                  .getUserMedia({ audio: true })
+                  .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+                  .catch(() => {});
+              }
+              const uniqueUserId = `player_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              identity.setIdentity(uniqueUserId, displayName); // saves + reloads; ?join= stays in the URL through the reload
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <RuntimeModeProvider>
+      <RoomProvider>
+        <CommunicationBridge>
+          <RoundProvider>
+            <AppShell />
+          </RoundProvider>
+        </CommunicationBridge>
+      </RoomProvider>
+    </RuntimeModeProvider>
+  );
+}
+
 export default function App() {
   return (
     <IdentityProvider>
-      <RuntimeModeProvider>
-        <RoomProvider>
-          <CommunicationBridge>
-            <RoundProvider>
-              <AppShell />
-            </RoundProvider>
-          </CommunicationBridge>
-        </RoomProvider>
-      </RuntimeModeProvider>
+      <AppGate />
     </IdentityProvider>
   );
 }

@@ -72,6 +72,15 @@ button:focus-visible,
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 0 0 8px #0a0d0b, 0 0 0 9px rgba(255, 255, 255, 0.06), 0 40px 90px rgba(0, 0, 0, 0.65),
     0 10px 30px rgba(0, 0, 0, 0.5);
+  /* Real-device fix: nothing in this app is a text field -- there is no
+     legitimate reason for a long-press anywhere to trigger the OS's
+     text-selection/callout menu (복사/전체선택/텍스트 선택). Without this,
+     a long-press on the mic-test row or PTT button opens that native
+     menu instead of registering as a press-and-hold. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 .ft-statusbar {
   position: absolute;
@@ -273,6 +282,76 @@ button:focus-visible,
 }
 
 /* ---------- Splash ---------- */
+/* RC2 real-device fix — name entry gate for a genuinely fresh device
+   arriving via an invite link, before it has any identity of its own. */
+.ft-namegate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  background: radial-gradient(120% 90% at 50% -10%, #0d2a1e 0%, transparent 55%), var(--void);
+}
+.ft-namegate-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(93, 219, 160, 0.14);
+  border: 1px solid rgba(93, 219, 160, 0.35);
+  color: var(--green-300);
+  margin-bottom: 18px;
+}
+.ft-namegate-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink-0);
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+}
+.ft-namegate-sub {
+  font-size: 13px;
+  color: var(--ink-1);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+.ft-namegate-input {
+  width: 100%;
+  max-width: 280px;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-0);
+  font-size: 15px;
+  text-align: center;
+  padding: 0 16px;
+  margin-bottom: 14px;
+}
+.ft-namegate-input:focus {
+  outline: none;
+  border-color: rgba(93, 219, 160, 0.5);
+}
+.ft-namegate-btn {
+  width: 100%;
+  max-width: 280px;
+  height: 48px;
+  border-radius: 14px;
+  border: none;
+  background: var(--green-300);
+  color: #06120c;
+  font-size: 15px;
+  font-weight: 800;
+}
+.ft-namegate-btn:disabled {
+  opacity: 0.4;
+}
+
 .ft-splash {
   display: flex;
   flex-direction: column;
@@ -545,6 +624,18 @@ button:focus-visible,
   max-height: 74%;
   padding-bottom: 10px; /* footer below now supplies its own bottom spacing */
   border-bottom: none;
+}
+.ft-room-leave-btn {
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  padding: 0 0 10px;
+  margin-top: -6px;
+  cursor: pointer;
+  align-self: flex-start;
 }
 .ft-room-section {
   margin-bottom: 14px;
@@ -1123,6 +1214,9 @@ button:focus-visible,
   transition: transform 0.15s ease, box-shadow 0.2s ease, color 0.2s ease, border-color 0.2s ease,
     background 0.3s ease;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .ft-ptt-wrap.is-on .ft-ptt-btn {
   background: radial-gradient(circle at 35% 30%, rgba(255, 91, 76, 0.4), rgba(30, 10, 8, 0.92) 70%);
@@ -2167,5 +2261,13 @@ button:focus-visible,
     border-radius: 0;
     border: none;
     box-shadow: none;
+  }
+  /* RC1-WEEK6 §3: StatusBar is no longer mounted on a real device (see
+     App.jsx's useIsRealDeviceViewport) — replace the fixed 54px padding
+     that used to clear the FAKE status bar with the REAL safe-area
+     inset, so content starts right after the actual notch/status bar
+     instead of leaving a blank 54px gap. */
+  .ft-screen {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }

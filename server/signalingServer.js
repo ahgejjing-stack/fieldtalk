@@ -44,13 +44,16 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
   const wss = new MiniWebSocketServer({ port });
   log(`signaling server listening on ws://localhost:${port} (PTT lease ${leaseDurationMs}ms)`);
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
     // Filled in once this socket sends room_join — needed so socket
     // close can look up which (roomId, userId) to clean up without a
     // registry scan (registry.removeConnection still exists as a
     // fallback for safety).
     let boundRoomId = null;
     let boundUserId = null;
+
+    const remoteAddress = req?.socket?.remoteAddress ?? "unknown";
+    log("[CLIENT CONNECTED]", { remoteAddress });
 
     ws.on("message", (raw) => {
       let msg;
@@ -64,20 +67,27 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
       switch (msg.type) {
         case "room_join": {
           const { roomId, userId, displayName, deviceSessionId } = msg;
-          if (!roomId || !userId) return;
+          log("[ROOM JOIN REQUEST]", { roomId, userId, displayName, remoteAddress });
+          if (!roomId || !userId) {
+            log("[ROOM JOIN FAILED]", { roomId, userId, reason: "missing_roomId_or_userId" });
+            return;
+          }
           registry.addMember(roomId, userId, ws, { displayName, deviceSessionId });
           boundRoomId = roomId;
           boundUserId = userId;
-          log("room_join", { roomId, userId, displayName, deviceSessionId });
+          const members = registry.getMembers(roomId);
+          log("[ROOM JOIN SUCCESS]", { roomId, userId, participants: members.length });
 
           ws.send(
             JSON.stringify({
               type: "room_joined",
               roomId,
-              members: registry.getMembers(roomId),
+              members,
               currentSpeakerUserId: lockManager.getCurrentSpeaker(roomId),
             })
           );
+          const broadcastCount = Math.max(members.length - 1, 0);
+          log("[PEER JOIN BROADCAST]", { roomId, from: userId, recipients: broadcastCount });
           registry.broadcast(roomId, { type: "member_online", roomId, userId, displayName }, userId);
           break;
         }
@@ -102,7 +112,7 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
           // non-member targets are silently dropped, not an error.
           const validTargets = (targetUserIds ?? []).filter((id) => registry.isMember(roomId, id));
           const result = lockManager.requestLock(roomId, boundUserId);
-          log("ptt_request", { roomId, senderUserId: boundUserId, targetUserIds: validTargets, requestId, granted: result.granted });
+          log("[PTT REQUEST]", { roomId, from: boundUserId, targets: validTargets, granted: result.granted });
 
           if (result.granted) {
             registry.sendTo(roomId, boundUserId, { type: "ptt_granted", roomId, requestId });
@@ -164,6 +174,28 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
           break;
         }
 
+        case "distance_share": {
+          // RC1 Networking Recovery — distance sharing was local-only
+          // until now: DistanceCard dispatched straight into the local
+          // Round Engine and never told the server, so teammates never
+          // received it. Broadcasts to every OTHER room member — the
+          // sender already applied it locally (excluding them avoids
+          // double-applying their own share).
+          const { roomId, referencePlayerId, referenceDistanceM, source, holeNumber } = msg;
+          if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
+          if (referencePlayerId !== boundUserId) return; // can't claim to share as someone else
+          if (typeof referenceDistanceM !== "number" || !Number.isFinite(referenceDistanceM)) return;
+          log("[DISTANCE SHARE]", { roomId, referencePlayerId, referenceDistanceM, holeNumber });
+          registry.broadcast(
+            roomId,
+            { type: "distance_share", roomId, referencePlayerId, referenceDistanceM, source, holeNumber },
+            boundUserId
+          );
+          const distanceRecipients = Math.max((registry.getMembers(roomId)?.length ?? 1) - 1, 0);
+          log("[DISTANCE SHARE BROADCAST]", { roomId, recipients: distanceRecipients });
+          break;
+        }
+
         case "connection_state": {
           // Informational relay only — clients use this to show hints
           // like "상대방 연결 불안정", never a control message the
@@ -183,7 +215,8 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
       const found = registry.removeConnection(ws) ?? (boundRoomId && boundUserId ? { roomId: boundRoomId, userId: boundUserId } : null);
       if (!found) return;
       const { roomId, userId } = found;
-      log("disconnect", { roomId, userId });
+      const remainingParticipants = registry.getMembers(roomId)?.length ?? 0;
+      log("[DISCONNECT]", { roomId, userId, remainingParticipants });
 
       const wasSpeaker = lockManager.releaseIfHeldBy(roomId, userId);
       if (wasSpeaker) {

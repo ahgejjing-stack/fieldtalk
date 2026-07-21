@@ -37,6 +37,7 @@ function resolveInitialIdentity() {
  */
 export function IdentityProvider({ children }) {
   const [identity] = useState(resolveInitialIdentity);
+  const [hasStoredIdentity] = useState(() => !!loadIdentity());
   const [deviceSessionId] = useState(() => loadOrCreateDeviceSessionId(() => makeDeviceSessionId(identity.userId)));
 
   const setIdentity = (userId, displayName) => {
@@ -52,8 +53,9 @@ export function IdentityProvider({ children }) {
       deviceSessionId,
       setIdentity,
       demoIdentities: DEMO_IDENTITIES,
+      hasStoredIdentity, // RC2 real-person-joining fix — see NameEntryGate.jsx
     }),
-    [identity, deviceSessionId]
+    [identity, deviceSessionId, hasStoredIdentity]
   );
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;

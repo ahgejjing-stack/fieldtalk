@@ -64,6 +64,21 @@ export default function HomeScreen({
     if (!room) {
       dispatch(actions.roomCreate(identity.userId, identity.displayName));
     }
+    // RC2 mic permission timing fix: request mic permission synchronously,
+    // tied directly to this tap. iOS/WebKit can lose "user activation"
+    // context by the time an async network round-trip (room_joined)
+    // resolves, which is when the existing prepare-mic-in-parallel logic
+    // fires — the permission dialog can then appear disconnected from
+    // any visible action, "suddenly", much later. Asking here instead
+    // means it's always tied to the tap the person just made. Once
+    // granted, the later flow just reuses it — no second prompt.
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+        .catch(() => {}); // denial/failure surfaces normally later via the real prepare() flow
+    }
+    setNetworkCommunicationEnabled(true);
     setRoomOverlayOpen(true);
   };
 
@@ -79,6 +94,20 @@ export default function HomeScreen({
     url.search = ""; // never carry over any stray query params
     url.searchParams.set("join", room.code);
     const link = url.toString();
+
+    // RC2 Join Flow priority — native share sheet first: on a real phone
+    // this opens Messages/KakaoTalk/etc. directly, which is far more
+    // likely to actually reach the other person than "copied, now go
+    // paste it somewhere yourself".
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: "FIELDTALK 초대", text: "같이 라운드 하실래요? 아래 링크로 참가해주세요.", url: link });
+        return; // share sheet itself is the confirmation -- no extra toast needed
+      } catch (err) {
+        if (err?.name === "AbortError") return; // user closed the share sheet -- not a failure, don't fall through to a toast
+        // any other failure (unsupported context, etc.) falls through to clipboard below
+      }
+    }
     try {
       await navigator.clipboard.writeText(link);
       onToast("초대 링크를 복사했습니다");
@@ -94,6 +123,7 @@ export default function HomeScreen({
     const code = window.prompt("참가할 Room 코드를 입력하세요 (Host 화면에 표시된 코드)");
     if (!code || !code.trim()) return;
     dispatch(actions.roomJoinByCode(code.trim().toUpperCase(), identity.userId, identity.displayName));
+    setNetworkCommunicationEnabled(true);
     setRoomOverlayOpen(true);
   };
 
@@ -103,6 +133,7 @@ export default function HomeScreen({
       // 않아도 즉시 동작해야 한다 — Room을 이 시점에 lazily 생성한다.
       dispatch(actions.roomCreate(identity.userId, identity.displayName));
       dispatch(actions.roomMemberInvite(companion.id, companion.name));
+      setNetworkCommunicationEnabled(true);
       return;
     }
     const member = room.members.find((m) => m.userId === companion.id);

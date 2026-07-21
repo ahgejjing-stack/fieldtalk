@@ -173,6 +173,7 @@ export default function RoundScreen({ onBack, onToast }) {
   const hasTarget = selectedTargets.size > 0;
   const targetUserIds = resolveTargetUserIds(selectedTargets, players.filter((p) => p.id !== meId));
 
+
   // "Gallery는 하나의 독립 화면이 아니라 Overlay UI" — closed by default, opened
   // by a small trigger, and closed again automatically once something is
   // selected inside it. Rendered outside .ft-round-scroll (see JSX below) so

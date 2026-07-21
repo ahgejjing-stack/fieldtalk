@@ -27,7 +27,10 @@ const IDENTITIES = {
   player_jaegeun: { userId: "player_jaegeun", displayName: "재근" },
 };
 
-const DEFAULT_SIGNALING_URL = "ws://localhost:8787";
+const DEFAULT_SIGNALING_URL =
+  typeof window !== "undefined" && window.location && window.location.hostname
+    ? `ws://${window.location.hostname}:8787`
+    : "ws://localhost:8787";
 
 function IdentityPicker({ selected, onSelect }) {
   return (
@@ -200,7 +203,7 @@ export default function TwoDeviceTestScreen({ onBack, onToast }) {
   const networkConfig = {
     signalingUrl,
     identity: { ...IDENTITIES[myUserId], roomId, deviceSessionId: `${myUserId}_${Date.now()}` },
-    iceServers: [], // §2: empty works for same-machine/same-network testing; a real deployment injects STUN/TURN via config, never hardcoded here
+    iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }], // RC2 review: free public STUN, no infra needed
   };
 
   return (

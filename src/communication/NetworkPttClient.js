@@ -47,6 +47,14 @@ import { COMMUNICATION_STATES } from "./communicationState.js";
 const NETWORK_VOICE_DETECTED_THRESHOLD = 0.06; // same visual-only threshold as LocalPttClient
 const JOIN_TIMEOUT_MS = 5000; // Part D
 const DISCONNECTED_GRACE_MS = 5000; // Part B — "disconnected가 timeout 이상 지속"
+// RC1-WEEK6 §1.2 — 1s, 2s, 4s, 8s, capped at 15s from then on.
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 15000;
+// RC1-WEEK6 §1.8 — after this many failed attempts, stop the automatic
+// loop and surface "연결이 복구되지 않았습니다" — roughly 1+2+4+8+15+15+15+15s
+// ≈ 75s of trying, generous for a genuine dead-zone/LTE-handoff blip
+// without retrying forever in the background.
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 export class NetworkPttClient extends PttClient {
   /**
@@ -74,6 +82,8 @@ export class NetworkPttClient extends PttClient {
       isTesting: false,
       lastError: null,
       connectionState: "disconnected",
+      retryCount: 0, // RC1-WEEK6 §1.7 — DEV diagnostic only
+      nextRetrySec: null, // RC1-WEEK6 §1.7 — DEV diagnostic only
       remoteSpeakerUserId: null,
       remoteSpeakerName: null,
       isReceiving: false,
@@ -81,12 +91,14 @@ export class NetworkPttClient extends PttClient {
       members: [],
       remoteInputLevel: 0,
       roundStartedPayload: null, // Runtime Identity v0.4 §9
+      reconnectEvent: null, // RC1-WEEK6 §1.8 — one-shot signal for the UI toast layer: "reconnecting" | "reconnected" | "give_up". Cleared by the consumer.
     };
 
     this.listeners = new Set();
     this._levelRaf = null;
     this._preparePromise = null;
     this._transports = new Map(); // userId -> WebRtcTransport
+    this._peerStates = new Map(); // RC1-WEEK7 §4 — userId -> raw RTCPeerConnection state, tracked separately from top-level connectionState
     this._remoteAudioEl = null;
     this._remoteAnalyserCtx = null;
     this._remoteAnalyser = null;
@@ -94,6 +106,23 @@ export class NetworkPttClient extends PttClient {
     this._remoteLevelRaf = null;
     this._joined = false;
     this._disconnectedTimers = new Map(); // userId -> timer, Part B disconnected-grace
+
+    // RC1-WEEK6 §1 — Automatic Reconnection state. `_reconnectTimer` is
+    // the ONLY place a reconnect timer is ever stored — §1.3's "한 번에
+    // 재연결 타이머는 하나만 존재해야 한다" is enforced by always clearing
+    // this before scheduling a new one, everywhere it's touched.
+    this._reconnectTimer = null;
+    this._reconnectAttempt = 0;
+    this._leaving = false; // Priority 2 — set true only by leaveRoom(), blocks any further reconnection
+    this._giveUpToastShown = false;
+
+    // §1.6 — the browser's own online event retries immediately instead
+    // of waiting out the current backoff. Bound once here so it can be
+    // removed in release()/leaveRoom() without leaking a listener.
+    this._handleOnline = () => this._attemptReconnect({ immediate: true });
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("online", this._handleOnline);
+    }
 
     this._wireSignaling();
   }
@@ -210,6 +239,7 @@ export class NetworkPttClient extends PttClient {
     this._disconnectedTimers.clear();
     for (const transport of this._transports.values()) transport.close();
     this._transports.clear();
+    this._peerStates.clear(); // RC1-WEEK7 Priority 2
     this._joined = false; // Part 6: a closed/failed connection is no longer "joined"
     this._setState({ connectionState: "disconnected", lastError: reason ?? this.state.lastError });
   }
@@ -251,7 +281,18 @@ export class NetworkPttClient extends PttClient {
 
       const unsubJoined = this.signaling.on("room_joined", (msg) => {
         this._joined = true;
-        this._setState({ connectionState: "connected", members: msg.members ?? [] });
+        const members = msg.members ?? [];
+        const hasOtherMembers = members.some((m) => m.userId && m.userId !== this.identity.userId);
+        // RC1-WEEK7 Priority 4: a solo room has no peer to wait for, so
+        // room_joined alone is "connected". A room with other people in
+        // it isn't really usable again until at least one of those
+        // peers' RTCPeerConnection is back — "media_reconnecting" holds
+        // that honestly instead of claiming "connected" prematurely.
+        this._setState({
+          connectionState: hasOtherMembers ? "media_reconnecting" : "connected",
+          members,
+        });
+        this._reconcileMembers(members); // Priority 1/3 — rebuild peer connections
         finish({ ok: true });
       });
 
@@ -263,14 +304,113 @@ export class NetworkPttClient extends PttClient {
     });
   }
 
+  /** One-shot toast signal consumer, matching clearRoundStartedPayload's
+   * pattern — the UI reads reconnectEvent once to show a toast, then
+   * clears it so it doesn't re-fire on every re-render. */
+  clearReconnectEvent() {
+    this._setState({ reconnectEvent: null });
+  }
+
+  /** RC1-WEEK6 §1 — the ONE place reconnection is orchestrated, whether
+   * triggered by a backoff timer or the browser's `online` event.
+   * `{ immediate: true }` (only ever passed by _handleOnline) skips the
+   * wait and tries right now; the plain scheduled path computes the
+   * backoff from `_reconnectAttempt`. Either way, at most one timer and
+   * at most one in-flight connectToRoom() call can exist at a time. */
+  _attemptReconnect({ immediate = false } = {}) {
+    if (this._leaving) return; // Priority 2: never reconnect after an explicit leave
+    if (this._joined || this.state.connectionState === "connecting") return; // already connected/connecting — never a duplicate
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
+    if (this._reconnectAttempt >= MAX_RECONNECT_ATTEMPTS && !immediate) {
+      // §1.8 "일정 횟수 이상 실패" — stop the automatic loop. `online`
+      // regaining connectivity is still a strong enough signal to reset
+      // and try again (handled by the `immediate` branch below).
+      if (!this._giveUpToastShown) {
+        this._giveUpToastShown = true;
+        this._setState({ connectionState: "failed", reconnectEvent: "give_up", nextRetrySec: null });
+      }
+      return;
+    }
+
+    if (immediate) {
+      // A fresh signal that connectivity may be back — worth a clean
+      // restart of the backoff sequence rather than waiting out however
+      // much of the old (possibly very long) delay remains.
+      this._reconnectAttempt = 0;
+      this._giveUpToastShown = false;
+      this._runReconnectAttemptNow();
+      return;
+    }
+
+    const delayMs = Math.min(RECONNECT_BASE_MS * 2 ** this._reconnectAttempt, RECONNECT_MAX_MS);
+    this._setState({
+      connectionState: "reconnecting",
+      retryCount: this._reconnectAttempt,
+      nextRetrySec: Math.round(delayMs / 1000),
+      reconnectEvent: this._reconnectAttempt === 0 ? "reconnecting" : this.state.reconnectEvent,
+    });
+    this._reconnectTimer = setTimeout(() => this._runReconnectAttemptNow(), delayMs);
+  }
+
+  async _runReconnectAttemptNow() {
+    this._reconnectTimer = null;
+    if (this._leaving || this._joined) return;
+    this._setState({ connectionState: "reconnecting", retryCount: this._reconnectAttempt, nextRetrySec: 0 });
+
+    const result = await this.connectToRoom();
+    if (this._leaving) return; // leaveRoom() may have fired while the attempt was in flight
+
+    if (result.ok) {
+      this._reconnectAttempt = 0;
+      this._giveUpToastShown = false;
+      // RC1-WEEK7 Priority 4: room_joined's handler already set
+      // connectionState to "connected" (solo room) or "media_reconnecting"
+      // (others present) — only announce "reconnected" here for the
+      // solo case. The multi-person case waits for
+      // _maybeCompleteMediaReconnect() once a peer is actually back.
+      if (this.state.connectionState === "connected") {
+        this._setState({ reconnectEvent: "reconnected", retryCount: 0, nextRetrySec: null });
+      } else {
+        this._setState({ retryCount: 0, nextRetrySec: null });
+      }
+    } else {
+      this._reconnectAttempt += 1;
+      this._attemptReconnect(); // schedules the next backoff step, or gives up at the cap
+    }
+  }
+
+  /** Priority 2 — Explicit Leave Room. Distinct from a connection drop:
+   * this is the user saying "I'm done", so nothing should try to bring
+   * the connection back afterward. Tears down every piece §Priority 2
+   * calls out explicitly, in order, and is idempotent. */
+  leaveRoom() {
+    this._leaving = true;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    if (this.state.status === COMMUNICATION_STATES.TRANSMITTING) {
+      this.signaling.releasePtt();
+    }
+    this._cleanupConnection("leave_room");
+    this.signaling.close();
+    this._reconnectAttempt = 0;
+    this._giveUpToastShown = false;
+    this._setState({ connectionState: "disconnected", reconnectEvent: null, retryCount: 0, nextRetrySec: null, members: [] });
+  }
+
   _wireSignaling() {
     this.signaling.on("member_online", (msg) => {
       this._upsertMember({ userId: msg.userId, displayName: msg.displayName }); // Part E
-      // Only the side that was ALREADY in the room offers to the new
-      // arrival — avoids both sides racing to offer (glare). Guard
-      // against acting twice on a duplicate member_online for the same
-      // peer (Part E "같은 member_online 2회").
-      if (!this._transports.has(msg.userId)) {
+      // RC1-WEEK7 Priority 1/3.3 — deterministic rule instead of "whoever
+      // was already here offers"; also guards duplicate member_online
+      // for the same peer from ever creating a second transport.
+      if (!this._transports.has(msg.userId) && this._shouldOfferTo(msg.userId)) {
         this._initiateOfferTo(msg.userId);
       }
     });
@@ -351,6 +491,13 @@ export class NetworkPttClient extends PttClient {
     this.signaling.on("round_started", (msg) => {
       this._setState({ roundStartedPayload: msg });
     });
+    this.signaling.on("distance_share", (msg) => {
+      // RC1 Networking Recovery — surfaced via state the same way
+      // roundStartedPayload is; App.jsx/RoundScreen watches this and
+      // dispatches teamDistanceShare() into the local Round Engine on
+      // arrival, matching how the SENDER already applied it locally.
+      this._setState({ receivedDistanceShare: msg });
+    });
     this.signaling.on("round_start_denied", (msg) => {
       this._setState({ lastError: `round_start_denied:${msg.reason}` });
     });
@@ -362,11 +509,52 @@ export class NetworkPttClient extends PttClient {
 
     this.signaling.on("socket_closed", () => {
       this._cleanupConnection("socket_closed"); // Part B
+      this._attemptReconnect(); // RC1-WEEK6 §1.1 — unexpected drop, not an explicit leave
     });
 
     this.signaling.on("socket_error", () => {
       this._cleanupConnection("socket_error"); // Part B
+      this._attemptReconnect(); // RC1-WEEK6 §1.1
     });
+  }
+
+  /** RC1-WEEK7 Priority 1 — deterministic, order-independent offer rule:
+   * whichever of the two userIds sorts first (string compare) is always
+   * the offerer, the other always answers. This replaces the old
+   * "whoever was already in the room offers to the new arrival" rule,
+   * which breaks down the moment BOTH sides might be reconnecting near
+   * simultaneously (Required Verification C) — there's no longer a
+   * well-defined "who was here first" in that case, but userId ordering
+   * is always well-defined. */
+  _shouldOfferTo(remoteUserId) {
+    return this.identity.userId < remoteUserId;
+  }
+
+  /** RC1-WEEK7 Priority 3 — treats room_joined's member list as the one
+   * authoritative source of "who should I have a peer connection with
+   * right now": drops transports for anyone no longer present, and
+   * starts connections (per the offer rule) for anyone present who
+   * doesn't have one yet. Also fully covers §4 ("본인 userId는 절대
+   * remote peer로 만들지 않음") by filtering self out up front. */
+  _reconcileMembers(members) {
+    const remoteIds = new Set(
+      (members ?? []).map((m) => m.userId).filter((id) => id && id !== this.identity.userId)
+    );
+    for (const [userId, transport] of this._transports) {
+      if (!remoteIds.has(userId)) {
+        transport.close();
+        this._transports.delete(userId);
+        this._clearDisconnectedTimer(userId);
+      }
+    }
+    for (const userId of remoteIds) {
+      if (this._transports.has(userId)) continue; // §3.3 — never a duplicate
+      if (this._shouldOfferTo(userId)) {
+        this._initiateOfferTo(userId);
+      }
+      // else: wait for their offer, which creates the transport on
+      // arrival via the "offer" handler's _getOrCreateTransport.
+    }
   }
 
   _getOrCreateTransport(remoteUserId) {
@@ -397,9 +585,16 @@ export class NetworkPttClient extends PttClient {
   /** Part B: RTCPeerConnection state changes funnel through here — a
    * "failed" state, or a "disconnected" state that doesn't recover
    * within DISCONNECTED_GRACE_MS, both trigger the same unified
-   * connection cleanup. */
+   * connection cleanup.
+   * RC1-WEEK7 Priority 4: no longer overwrites the top-level
+   * connectionState with the raw per-peer string (that was a real bug —
+   * one peer's "checking"/"connecting" could stomp a value the rest of
+   * the app expects to be one of a small known set). Peer states are
+   * tracked separately in _peerStates; _maybeCompleteMediaReconnect()
+   * is the only thing allowed to promote connectionState to "connected"
+   * during a reconnect. */
   _handleTransportStateChange(remoteUserId, state) {
-    this._setState({ connectionState: state === "connected" ? "connected" : state });
+    this._peerStates.set(remoteUserId, state);
     this.signaling.sendConnectionState(state);
 
     if (state === "failed") {
@@ -419,6 +614,21 @@ export class NetworkPttClient extends PttClient {
     }
     // Recovered (e.g. back to "connected") before the grace period fired.
     this._clearDisconnectedTimer(remoteUserId);
+    if (state === "connected") this._maybeCompleteMediaReconnect();
+  }
+
+  /** RC1-WEEK7 Priority 4 — the only place connectionState is promoted
+   * from "media_reconnecting" to the final "connected", and the only
+   * place the "reconnected" toast fires for a room with other members
+   * in it. Solo rooms skip this path entirely (room_joined alone is
+   * already "connected" for them — see _runReconnectAttemptNow). */
+  _maybeCompleteMediaReconnect() {
+    if (this.state.connectionState !== "media_reconnecting") return;
+    const anyPeerConnected = Array.from(this._peerStates.values()).some((s) => s === "connected");
+    if (!anyPeerConnected) return;
+    this._reconnectAttempt = 0;
+    this._giveUpToastShown = false;
+    this._setState({ connectionState: "connected", reconnectEvent: "reconnected", retryCount: 0, nextRetrySec: null });
   }
 
   _clearDisconnectedTimer(remoteUserId) {
@@ -606,7 +816,30 @@ export class NetworkPttClient extends PttClient {
     this._setState({ roundStartedPayload: null });
   }
 
+  /** RC1 Networking Recovery — actually sends a distance share to the
+   * rest of the room. Callers (DistanceCard.jsx) still ALSO dispatch
+   * locally themselves, same as before — this only adds the network
+   * relay that was missing, it doesn't change local-apply behavior. */
+  shareDistance({ referenceDistanceM, source, holeNumber }) {
+    this.signaling.sendDistanceShare({ referenceDistanceM, source, holeNumber });
+  }
+
+  /** The receiving side calls this once it has consumed
+   * state.receivedDistanceShare (dispatched teamDistanceShare locally) —
+   * prevents re-applying the same share on every subsequent re-render. */
+  clearReceivedDistanceShare() {
+    this._setState({ receivedDistanceShare: null });
+  }
+
   release() {
+    this._leaving = true; // RC1-WEEK6 §1 — a full release must not trigger reconnection either
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    if (typeof window !== "undefined" && window.removeEventListener) {
+      window.removeEventListener("online", this._handleOnline);
+    }
     if (this.state.status === COMMUNICATION_STATES.TRANSMITTING) {
       this.signaling.releasePtt();
     }
