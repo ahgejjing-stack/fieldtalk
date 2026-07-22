@@ -35,7 +35,26 @@ export function RuntimeModeProvider({ children }) {
   // the existing casual demo flow (Course Reference/Score/etc, none of
   // which need a signaling server) is completely unaffected — nobody is
   // ever auto-connected to a WebSocket server they didn't ask for.
-  const [networkCommunicationEnabled, setNetworkCommunicationEnabled] = useState(false);
+  const [networkCommunicationEnabledRaw, setNetworkCommunicationEnabledRaw] = useState(false);
+  const networkCommunicationEnabled = networkCommunicationEnabledRaw;
+  // RC4 diagnostic — [NETWORK MODE] trace every transition WITH a stack
+  // slice, so a device test shows exactly who flips network on/off and
+  // when. This is the direct instrument for "networkEnabled=false at round
+  // time" — the log names the caller.
+  const setNetworkCommunicationEnabled = React.useCallback((next) => {
+    setNetworkCommunicationEnabledRaw((prev) => {
+      if (prev !== next) {
+        // eslint-disable-next-line no-console
+        console.log(
+          "[NETWORK MODE]",
+          `${prev} -> ${next}`,
+          "by:",
+          (new Error().stack || "").split("\n").slice(2, 4).join(" | ").trim()
+        );
+      }
+      return next;
+    });
+  }, []);
   // RC4 Session Recovery — true only for a [계속하기] rejoin, so the next
   // network connect uses requireExisting (server rejects an ended room
   // rather than re-creating it). One-shot: consumed by CommunicationBridge.

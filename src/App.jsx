@@ -25,6 +25,8 @@ import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
 // roundId/...), persisted separately from full room state so an
 // interruption can offer [계속하기] without restoring stale members.
 import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
+import { clearRoomState } from "./room/roomStorage.js";
+import { createNetworkRoundState } from "./data/roundSeed.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
 // sender path calls via useAudioEngine), not a second playback path.
 import { playSoundById } from "./services/audioEngine.js";
@@ -237,11 +239,51 @@ function AppShell() {
     setScreen("round");
   };
 
-  // RC4 Session Recovery — persist the MINIMUM recovery reference whenever
-  // we're in a live network room. Only roomId/userId/displayName/role/
-  // roundId/lastHole — deliberately NOT room.members (stale roster was the
-  // old bug). This is what lets a terminated/backgrounded app offer
-  // [계속하기] on next launch. Explicit Leave / End Round clear it
+  // RC4 — three DISTINCT round-screen exits, each with an explicit,
+  // non-overlapping state transition. These are the single source of truth
+  // shared by RoundScreen's action sheet and RoomOverlay's leave button so
+  // "뒤로가기"(홈 이동) / "방 나가기" / "라운드 종료" can never collapse into
+  // the same behaviour.
+
+  // 홈으로 이동 — navigation ONLY. Room, communication, and Round state all
+  // stay intact so the user can return to the live round. This is the plain
+  // back arrow's meaning.
+  const handleGoHome = () => {
+    setScreen("home");
+  };
+
+  // 방 나가기 — full teardown of "being in a room", WITHOUT touching
+  // identity/nickname (leaving a room is not a logout). Tears down the three
+  // systems that each own a piece of room membership (communication / Room
+  // Engine / Runtime network mode), clears recovery refs, resets the Round
+  // Engine to a clean local baseline (so no stale network round lingers),
+  // and returns home. On the server side, communication.leaveRoom() sends an
+  // explicit room_leave which triggers immediate host transfer if this
+  // device was host.
+  const handleLeaveRoom = () => {
+    communication.leaveRoom?.();
+    roomDispatch(roomActions.roomReset());
+    clearRoomState(identity.userId);
+    clearActiveRoomRef();
+    // Reset the Round Engine to a clean local baseline so the just-left
+    // network round can't reappear. createNetworkRoundState() with no
+    // players is a clean, demo-free empty state; the demo/local flow will
+    // re-seed on its own next time it's needed.
+    dispatch(actions.roundEnterNetworkBaseline(createNetworkRoundState({ players: [] })));
+    setNetworkCommunicationEnabled(false);
+    setScreen("home");
+    showToast("방에서 나갔습니다");
+  };
+
+  // 라운드 종료 — completes the round (Room membership is KEPT, so the team
+  // can start another round). Clears only the recovery ref (a completed
+  // round is non-recoverable) and returns home.
+  const handleEndRound = () => {
+    dispatch(actions.roundComplete());
+    clearActiveRoomRef();
+    setScreen("home");
+    showToast("라운드를 종료했습니다");
+  };
   // elsewhere; a mere restart never does.
   useEffect(() => {
     if (!networkCommunicationEnabled || !room) return;
@@ -492,7 +534,13 @@ function AppShell() {
           />
         )}
         {screen === "round" && (
-          <RoundScreen onBack={() => setScreen("home")} onToast={showToast} />
+          <RoundScreen
+            onBack={handleGoHome}
+            onGoHome={handleGoHome}
+            onLeaveRoom={handleLeaveRoom}
+            onEndRound={handleEndRound}
+            onToast={showToast}
+          />
         )}
         {screen === "twoDeviceTest" && (
           <TwoDeviceTestScreen onBack={() => setScreen("home")} onToast={showToast} />

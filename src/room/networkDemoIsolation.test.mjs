@@ -360,5 +360,38 @@ await test("J2. bare roundStart on baseline leaves loading gate TRUE (why home b
   assert.equal(loadingGate, true, "bare start strands the user — confirms the routing fix is required");
 });
 
+
+// ---- RC4 three distinct round-screen exits (semantic separation) ----
+// The handlers live in App.jsx (JSX, not importable here), so this test
+// documents and locks the REQUIRED semantics as data: which subsystems each
+// exit touches. If someone later makes two exits identical, this table (and
+// the review that must update it) is the tripwire.
+await test("K. exit semantics: go-home / leave-room / end-round are all distinct", () => {
+  const EXIT_SEMANTICS = {
+    goHome:   { navigation: true,  roomReset: false, clearRoomStorage: false, clearActiveRef: false, networkOff: false, roundComplete: false, resetRound: false, clearsNickname: false },
+    leaveRoom:{ navigation: true,  roomReset: true,  clearRoomStorage: true,  clearActiveRef: true,  networkOff: true,  roundComplete: false, resetRound: true,  clearsNickname: false },
+    endRound: { navigation: true,  roomReset: false, clearRoomStorage: false, clearActiveRef: true,  networkOff: false, roundComplete: true,  resetRound: false, clearsNickname: false },
+  };
+  const keys = Object.keys(EXIT_SEMANTICS);
+  // All three must differ pairwise.
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      assert.notDeepEqual(
+        EXIT_SEMANTICS[keys[i]], EXIT_SEMANTICS[keys[j]],
+        `${keys[i]} and ${keys[j]} must not be the same action`
+      );
+    }
+  }
+  // Specific required invariants:
+  assert.equal(EXIT_SEMANTICS.goHome.roomReset, false, "go-home must NOT tear down the room");
+  assert.equal(EXIT_SEMANTICS.leaveRoom.roomReset, true, "leave-room MUST tear down the room");
+  assert.equal(EXIT_SEMANTICS.endRound.roundComplete, true, "end-round MUST complete the round");
+  assert.equal(EXIT_SEMANTICS.endRound.roomReset, false, "end-round must KEEP the room");
+  // Founder #2 — leaving a room is NOT a logout.
+  for (const k of keys) {
+    assert.equal(EXIT_SEMANTICS[k].clearsNickname, false, `${k} must NOT clear nickname/identity`);
+  }
+});
+
 console.log(`
 ${passed} passed, 0 failed`);

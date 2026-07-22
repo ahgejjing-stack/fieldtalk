@@ -74,6 +74,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   const [selectedCourseId, setSelectedCourseId] = useState(null);
   const [startHole, setStartHole] = useState(1);
   const [pendingWarnings, setPendingWarnings] = useState(null); // null = no confirm modal showing
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // RC4 방 나가기 확인 모달
 
   useEffect(() => {
     if (!isOpen) return;
@@ -313,14 +314,15 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     // Round and a server-confirmed-expired rejoin, that discards the ref.)
     clearRoomState(identity.userId);
     clearActiveRoomRef();
-    try {
-      window.sessionStorage?.removeItem("fieldtalk.nickConfirmed.session.v1");
-    } catch {
-      /* ignore */
-    }
+    // RC4 — leaving a room is NOT a logout: identity, nickname, and the
+    // nickname-confirmation session flag must all survive so re-joining a
+    // new room never forces the person to re-confirm their nickname.
+    // (Previously this cleared fieldtalk.nickConfirmed.session.v1 here,
+    // which wrongly re-prompted on the next join.)
     setNetworkCommunicationEnabled(false);
+    setShowLeaveConfirm(false);
     onClose();
-    onToast("팀 연결을 종료했습니다");
+    onToast("방에서 나갔습니다");
   }
 
   return (
@@ -336,9 +338,15 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
             <X size={16} strokeWidth={2.2} />
           </button>
         </div>
-        {networkCommunicationEnabled && (
-          <button type="button" className="ft-room-leave-btn" onClick={handleLeaveRoom}>
-            팀 연결 종료
+        {/* RC4 — 방 나가기 버튼은 network flag가 아니라 ROOM 존재 기준으로
+            노출한다. RoomOverlay는 room이 있을 때만 렌더되므로 사실상 항상
+            표시된다. network가 false로 빠진 상태(실기기에서 실제 발생)에서도
+            사용자가 방을 나갈 수 있어야 하기 때문 — 오히려 그 상태가 가장
+            나가야 하는 상황이다. 클릭 시 바로 teardown하지 않고 확인 모달을
+            띄운다(특히 Host는 권한 이전/방 종료 안내가 필요). */}
+        {room && (
+          <button type="button" className="ft-room-leave-btn" onClick={() => setShowLeaveConfirm(true)}>
+            방 나가기
           </button>
         )}
 
@@ -387,39 +395,54 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
         )}
 
         {/* RC4 Issue 2 — real network room: show the actual participants
-            (server-authoritative, mirrored into room.members by App.jsx)
-            instead of the demo invite list. Self is excluded to match the
-            existing 참가자-list policy (Issue 6, unchanged). */}
-        {networkCommunicationEnabled && (
+            (server-authoritative, mirrored into room.members by App.jsx).
+            Self IS shown here (as "나") so a solo host doesn't see an empty
+            "아직 참가자가 없습니다" and wrongly conclude they aren't in the
+            room. The self-excluded policy (Issue 6) applies to the in-ROUND
+            player list, not this pre-round room roster. */}
+        {networkCommunicationEnabled && (() => {
+          // RC4 diagnostic — [ROOM MEMBERS]: exactly who the local Room
+          // Engine thinks is in the room, including self + joinStatus. This
+          // answers "Host 자신이 room.members에 존재하는가".
+          // eslint-disable-next-line no-console
+          console.log(
+            "[ROOM MEMBERS]",
+            `identity.userId=${identity.userId}`,
+            `hostUserId=${room.hostUserId}`,
+            `members=${JSON.stringify(room.members.map((m) => ({ userId: m.userId, name: m.displayName, joinStatus: m.joinStatus })))}`
+          );
+          const others = room.members.filter((m) => m.userId !== identity.userId);
+          return (
           <div className="ft-room-section">
             <span className="ft-pin-position-label">참가자</span>
             <div className="ft-room-member-list">
-              {room.members
-                .filter((m) => m.userId !== identity.userId)
-                .map((m) => {
-                  const isJoined = m.joinStatus === "joined";
-                  const isHost = m.userId === room.hostUserId;
-                  return (
-                    <div
-                      key={m.userId}
-                      className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
-                    >
-                      <span className="ft-room-member-name">
-                        {m.displayName}
-                        {isHost ? " · Host" : ""}
-                      </span>
-                      <span className="ft-room-member-status">
-                        {isJoined && <Check size={11} strokeWidth={3} />}
-                        {m.connectionStatus === "online" ? "연결됨" : "연결 끊김"}
-                      </span>
-                    </div>
-                  );
-                })}
-              {room.members.filter((m) => m.userId !== identity.userId).length === 0 && (
-                <p className="ft-pin-position-hint">아직 참가자가 없습니다. 초대 링크를 공유하세요.</p>
+              {room.members.map((m) => {
+                const isJoined = m.joinStatus === "joined";
+                const isHost = m.userId === room.hostUserId;
+                const isSelf = m.userId === identity.userId;
+                return (
+                  <div
+                    key={m.userId}
+                    className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
+                  >
+                    <span className="ft-room-member-name">
+                      {isSelf ? "나" : m.displayName}
+                      {isHost ? " · Host" : ""}
+                    </span>
+                    <span className="ft-room-member-status">
+                      {isJoined && <Check size={11} strokeWidth={3} />}
+                      {m.connectionStatus === "online" ? "연결됨" : "연결 끊김"}
+                    </span>
+                  </div>
+                );
+              })}
+              {others.length === 0 && (
+                <p className="ft-pin-position-hint">동반자를 초대하려면 초대 링크를 공유하세요.</p>
               )}
             </div>
           </div>
+          );
+        })()}
         )}
 
         {/* PTT 테스트 상태 (§4/§5, DEV 시뮬레이션) + 실제 마이크 준비(§6-A) */}
@@ -598,6 +621,33 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
               </button>
               <button className="ft-pin-pill is-active" onClick={runStart}>
                 시작
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* RC4 — 방 나가기 확인 모달. Host와 일반 참가자에게 서로 다른 안내를
+            보여준다. Host의 경우 서버가 자동으로 Host 권한을 이전하고(참가자가
+            없으면 방 종료), 이는 서버측 host-transfer 로직이 담당한다. */}
+        {showLeaveConfirm && (
+          <div className="ft-room-warning-confirm">
+            <p>
+              {room?.hostUserId === identity.userId ? (
+                <>
+                  방을 나가면 Host 권한이 다른 참가자에게 이전됩니다.
+                  <br />
+                  참가자가 없으면 방이 종료됩니다.
+                </>
+              ) : (
+                <>방에서 나가시겠습니까?</>
+              )}
+            </p>
+            <div className="ft-pin-position-pills">
+              <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(false)}>
+                취소
+              </button>
+              <button className="ft-pin-pill is-active" onClick={handleLeaveRoom}>
+                방 나가기
               </button>
             </div>
           </div>

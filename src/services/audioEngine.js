@@ -227,3 +227,41 @@ export function getCatalogVersion() {
 export function getDefaultCooldownMs() {
   return DEFAULT_COOLDOWN_MS;
 }
+
+/**
+ * playSendCompleteTone — RC4 CHEER POLICY.
+ * A short, neutral "sent" confirmation blip for the SENDER. Deliberately
+ * NOT a spoken phrase and NOT the cheer voice — the sender must never hear
+ * the cheer audio itself (only the receiver does). Uses WebAudio directly
+ * so it needs no asset and can't accidentally route through the TTS/voice
+ * path. Silent no-op where WebAudio is unavailable.
+ */
+export function playSendCompleteTone() {
+  try {
+    const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    // Two quick ascending notes — reads as "sent", not as speech.
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    osc.onended = () => {
+      try {
+        ctx.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  } catch {
+    /* ignore — confirmation tone is best-effort */
+  }
+}

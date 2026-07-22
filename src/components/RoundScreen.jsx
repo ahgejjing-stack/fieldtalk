@@ -5,6 +5,7 @@ import { useNowTick } from "../hooks/useNowTick.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
 import { RUNTIME_MODES } from "../config/runtimeMode.js";
 import { useCommunication } from "../context/useCommunication.js";
+import { useRoom } from "../context/useRoom.js";
 import { clearActiveRoomRef } from "../room/activeRoomRef.js";
 import { formatParRelative } from "../utils/scoreFormat.js";
 import {
@@ -85,7 +86,7 @@ function describeScoreSummary(scores, players, par) {
   return entered.map((p) => `${p.name} ${formatParRelative(scores[p.id], par)}`).join(" · ");
 }
 
-export default function RoundScreen({ onBack, onToast }) {
+export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound, onToast }) {
   const { round, meId, dispatch, actions, startPtt, stopPtt, completeCurrentHoleAndAdvance } = useRound();
 
   const hole = selectCurrentHole(round);
@@ -99,6 +100,7 @@ export default function RoundScreen({ onBack, onToast }) {
   const now = useNowTick(500);
   const { mode: runtimeMode, networkCommunicationEnabled } = useRuntimeMode();
   const communication = useCommunication();
+  const { room } = useRoom(); // RC4 — for host detection in the exit action sheet
   // Two Device Bidirectional Hardening v0.2 Part G: only ever overrides
   // the OTHER players' speaking display, and only while network
   // communication is explicitly on (App.jsx's CommunicationBridge is the
@@ -170,11 +172,27 @@ export default function RoundScreen({ onBack, onToast }) {
 
   // Sprint 3: local-only PTT target selection (see toggleTarget/describeTargets
   // above for why this isn't Round Engine state).
-  const [selectedTargets, setSelectedTargets] = useState(() => new Set());
+  // RC4 PTT UX — default the target to "전체" (everyone) so PTT is usable
+  // immediately and the "전체" row's selected state reflects a REAL
+  // selection, not an ambiguous default that looks selected but blocks
+  // transmit. Tapping "전체" again, or picking specific people, changes it
+  // exactly as before via toggleTarget.
+  const [selectedTargets, setSelectedTargets] = useState(() => new Set([ALL_TARGET]));
   const handleToggleTarget = (id) => setSelectedTargets((prev) => toggleTarget(prev, id));
-  const targetLabel = describeTargets(selectedTargets, players.filter((p) => p.id !== meId));
-  const hasTarget = selectedTargets.size > 0;
-  const targetUserIds = resolveTargetUserIds(selectedTargets, players.filter((p) => p.id !== meId));
+  const otherPlayers = players.filter((p) => p.id !== meId);
+  const targetLabel = describeTargets(selectedTargets, otherPlayers);
+  // RC4 PTT — separate "did the user SELECT a target" from "do any actual
+  // recipients EXIST". A solo host has 전체 selected (hasSelection=true) but
+  // zero connected companions (targetUserIds=[]), which must be explained
+  // as "연결된 동반자 없음", NOT "먼저 대상을 선택하세요".
+  const hasSelection = selectedTargets.size > 0;
+  const targetUserIds = resolveTargetUserIds(selectedTargets, otherPlayers);
+  const hasRecipients = targetUserIds.length > 0;
+  // PTT can transmit only when there is at least one real recipient.
+  const canTransmit = hasSelection && hasRecipients;
+  const blockedMessage = !hasSelection
+    ? "먼저 전달할 대상을 선택하세요."
+    : "현재 연결된 동반자가 없습니다.";
 
 
   // "Gallery는 하나의 독립 화면이 아니라 Overlay UI" — closed by default, opened
@@ -183,16 +201,33 @@ export default function RoundScreen({ onBack, onToast }) {
   // it never affects — or is affected by — the page's scroll position.
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [showEndRoundConfirm, setShowEndRoundConfirm] = useState(false); // P1-4 fix
+  const [showExitSheet, setShowExitSheet] = useState(false); // RC4 — 라운드 나가기 액션 시트
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // RC4 — 방 나가기 확인
+
+  const amHost = room?.hostUserId === meId;
+
+  // RC4 — three DISTINCT exits from the action sheet. Each delegates to the
+  // matching App-level handler so the state transitions never overlap.
+  const handleGoHomeFromSheet = () => {
+    setShowExitSheet(false);
+    (onGoHome ?? onBack)?.(); // navigation only
+  };
+  const handleLeaveRoomConfirmed = () => {
+    setShowLeaveConfirm(false);
+    setShowExitSheet(false);
+    onLeaveRoom?.(); // full room teardown (identity kept)
+  };
 
   const handleEndRoundConfirmed = () => {
-    dispatch(actions.roundComplete());
-    // RC4 Session Recovery — ending the round makes it non-recoverable.
-    // Clear this device's active-room reference so it's never offered for
-    // [계속하기]. Other participants' stale references are cleaned up on
-    // their next rejoin attempt, which the server rejects as inactive
-    // (room_join_denied) once the room empties out.
-    clearActiveRoomRef();
     setShowEndRoundConfirm(false);
+    setShowExitSheet(false);
+    if (onEndRound) {
+      onEndRound(); // App-level: roundComplete + keep Room + home
+    } else {
+      // Fallback (older wiring): local completion.
+      dispatch(actions.roundComplete());
+      clearActiveRoomRef();
+    }
   };
 
   /* Demo: simulate an incoming transmission from a companion via the Round
@@ -325,7 +360,7 @@ export default function RoundScreen({ onBack, onToast }) {
         {/* Compact header — "약 절반 수준" target: one icon row + two text
             lines, no big hero hole number, no decorative artwork. */}
         <div className="ft-compact-header">
-          <button className="ft-icon-btn" onClick={onBack} aria-label="뒤로">
+          <button className="ft-icon-btn" onClick={() => setShowExitSheet(true)} aria-label="메뉴">
             <ChevronLeft size={18} strokeWidth={2.2} />
           </button>
           <div className="ft-compact-header-info">
@@ -415,8 +450,8 @@ export default function RoundScreen({ onBack, onToast }) {
         <div className="ft-ptt-target-label">{targetLabel}</div>
         <PTTButton
           onToast={onToast}
-          canTransmit={hasTarget}
-          onBlockedPress={() => onToast("먼저 전달할 대상을 선택하세요.")}
+          canTransmit={canTransmit}
+          onBlockedPress={() => onToast(blockedMessage)}
           targetUserIds={targetUserIds}
         />
 
@@ -508,6 +543,62 @@ export default function RoundScreen({ onBack, onToast }) {
             </button>
             <button className="ft-pin-pill is-active" onClick={handleEndRoundConfirmed}>
               종료
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* RC4 — 라운드 화면 나가기 액션 시트. 세 동작을 명시적으로 분리한다:
+          홈으로 이동(navigation only) / 방 나가기(room teardown) /
+          라운드 종료(roundComplete, Room 유지). 같은 의미로 처리되지 않는다. */}
+      {showExitSheet && (
+        <div className="ft-gallery-overlay">
+          <div className="ft-gallery-scrim" onClick={() => setShowExitSheet(false)} />
+          <div className="ft-gallery-sheet">
+            <div className="ft-gallery-sheet-head">
+              <span className="ft-gallery-sheet-title">라운드 메뉴</span>
+              <button type="button" className="ft-icon-btn" onClick={() => setShowExitSheet(false)} aria-label="닫기">
+                <X size={16} strokeWidth={2.2} />
+              </button>
+            </div>
+            <div className="ft-pin-position-pills" style={{ flexDirection: "column", gap: 8, padding: 12 }}>
+              <button className="ft-pin-pill" onClick={handleGoHomeFromSheet}>
+                홈으로 이동 (라운드 유지)
+              </button>
+              <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(true)}>
+                라운드 종료
+              </button>
+              <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(true)}>
+                방 나가기
+              </button>
+              <button className="ft-pin-pill" onClick={() => setShowExitSheet(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RC4 — 방 나가기 확인 (Host/참가자 구분). */}
+      {showLeaveConfirm && (
+        <div className="ft-room-warning-confirm">
+          <p>
+            {amHost ? (
+              <>
+                방을 나가면 Host 권한이 다른 참가자에게 이전됩니다.
+                <br />
+                참가자가 없으면 방이 종료됩니다.
+              </>
+            ) : (
+              <>방에서 나가시겠습니까?</>
+            )}
+          </p>
+          <div className="ft-pin-position-pills">
+            <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(false)}>
+              취소
+            </button>
+            <button className="ft-pin-pill is-active" onClick={handleLeaveRoomConfirmed}>
+              방 나가기
             </button>
           </div>
         </div>

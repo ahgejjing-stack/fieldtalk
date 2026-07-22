@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useAudioEngine } from "../hooks/useAudioEngine.js";
+import { playSendCompleteTone } from "../services/audioEngine.js";
 import { useRound } from "../context/useRound.js";
 import { useCommunication } from "../context/useCommunication.js";
 import SoundButton, { reasonToMessage } from "./SoundButton.jsx";
@@ -86,7 +87,7 @@ function saveFavorites(set) {
  * person lands back on the play screen automatically.
  */
 export default function GalleryPanel({ isOpen, onClose, onToast }) {
-  const { catalog, play } = useAudioEngine();
+  const { catalog } = useAudioEngine();
   const { dispatch, actions, meId } = useRound();
   const communication = useCommunication(); // P0-5 fix
   const [activeCategory, setActiveCategory] = useState(null);
@@ -120,33 +121,58 @@ export default function GalleryPanel({ isOpen, onClose, onToast }) {
   };
 
   const handlePlay = async (sound) => {
-    const result = await play(sound.id);
-    if (result.success) {
-      // Record the cheer in the Round Engine's shared event log — unchanged
-      // from before; PlayerCard's Event Board (TASK-007) is what shows the
-      // "👏 {label}" bubble on the actor's card once we're back on the play
-      // screen, so this overlay doesn't need its own popup animation.
-      dispatch(
-        actions.soundPlayed({
-          soundId: sound.id,
-          category: sound.category,
-          label: sound.label,
-          actorPlayerId: meId,
-        })
-      );
-      // P0-5 fix — this was purely local before; teammates never
-      // received a cheer no matter what was tapped.
-      communication.shareSoundPlayed?.({
+    // RC4 CHEER POLICY (Project Eagle) — the SENDER must NOT hear the cheer
+    // VOICE. The sender gets: send animation (Event Board bubble via the
+    // soundPlayed event), haptic, and a short "send complete" tone. The
+    // actual cheer voice is played only on the RECEIVER (App.jsx's
+    // receivedSoundPlayed handler). Previously the sender called play()
+    // which spoke the full voice locally — that's what this removes.
+
+    // Guard: still respect cooldown/availability via a lightweight check
+    // rather than actually voicing the sound. We treat the tap as always
+    // eligible unless the catalog marks it unavailable.
+    const isAvailable = !catalog || catalog.some?.((s) => s.id === sound.id) !== false;
+    if (isAvailable === false) {
+      onToast(reasonToMessage?.("unavailable") ?? "지금은 사용할 수 없습니다");
+      return { success: false, reason: "unavailable" };
+    }
+
+    // 1) Send animation — record in the Round Engine's shared event log so
+    //    PlayerCard's Event Board shows the "👏 {label}" bubble on my card.
+    dispatch(
+      actions.soundPlayed({
         soundId: sound.id,
         category: sound.category,
         label: sound.label,
-        targetUserIds: null, // broadcast to everyone in the room for now — no per-target selection UI here yet
-      });
-      onClose();
-    } else {
-      onToast(reasonToMessage(result.reason));
+        actorPlayerId: meId,
+      })
+    );
+
+    // 2) Haptic — sender-side tactile confirmation (no-op where unsupported).
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
+    } catch {
+      /* ignore */
     }
-    return result;
+
+    // 3) Send-complete tone — a short, neutral confirmation that is NOT the
+    //    cheer voice. Uses a WebAudio blip so it never speaks the phrase.
+    try {
+      playSendCompleteTone();
+    } catch {
+      /* ignore */
+    }
+
+    // 4) Broadcast to teammates — the receiver plays the actual voice.
+    communication.shareSoundPlayed?.({
+      soundId: sound.id,
+      category: sound.category,
+      label: sound.label,
+      targetUserIds: null, // broadcast to everyone else in the room
+    });
+
+    onClose();
+    return { success: true };
   };
 
   const activeCategoryMeta = CATEGORIES.find((c) => c.id === activeCategory);

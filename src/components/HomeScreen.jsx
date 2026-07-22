@@ -60,15 +60,23 @@ export default function HomeScreen({
   };
 
   // RC4 CRITICAL — the home "라운드 시작" button.
-  // In LOCAL/demo mode it starts the demo round directly (onStartRound()).
-  // In NETWORK mode with a real room, a bare onStartRound() would only
-  // flip the clean network BASELINE to status=active WITHOUT any players,
-  // leaving RoundScreen stuck on the "라운드 준비 중" loading gate (the
-  // single-device stall). The real network round is built by RoomOverlay's
-  // ROUND START (it owns course selection + buildInitialRoundFromRoom), so
-  // in network mode we open that overlay instead of the broken bare start.
+  // If a Room exists at all, the real round must be built from that room
+  // via RoomOverlay's ROUND START (course selection + buildInitialRoundFromRoom).
+  // The previous version gated this on networkCommunicationEnabled, but a
+  // device test showed that flag can be false at this moment (something
+  // flips it off after 팀 연결 — traced via [NETWORK MODE] logs), which
+  // dropped the host onto the bare onStartRound() path: that only flips the
+  // empty network BASELINE to status=active with ZERO players, stranding
+  // the host on "라운드 준비 중". Routing on room existence (not the flag)
+  // is robust to that. Only the pure local/demo flow (no room) uses the
+  // bare start.
   const handleHomeStartRound = () => {
-    if (networkCommunicationEnabled && room) {
+    // eslint-disable-next-line no-console
+    console.log("[HOME START]", `hasRoom=${!!room}`, `networkEnabled=${networkCommunicationEnabled}`, "→", room ? "open RoomOverlay (build real round)" : "bare onStartRound (local/demo)");
+    if (room) {
+      // Ensure network mode is on for a room-based round — closing/reopening
+      // the overlay or other flows may have left it off.
+      if (!networkCommunicationEnabled) setNetworkCommunicationEnabled(true);
       setRoomOverlayOpen(true);
       return;
     }
