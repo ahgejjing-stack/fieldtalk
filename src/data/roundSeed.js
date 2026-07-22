@@ -56,9 +56,9 @@ export function buildPendingHole(n) {
 export function buildHoles() {
   const holes = [];
   for (let n = 1; n <= 18; n++) {
-    if (n === 7) {
+    if (n === 1) {
       holes.push({
-        number: 7,
+        number: 1,
         par: 4,
         courseDistanceM: 356,
         status: "playing",
@@ -195,7 +195,7 @@ export function createRoundSeed() {
       name: "레이크사이드 CC",
       totalHoles: 18,
     },
-    currentHoleNumber: 7,
+    currentHoleNumber: 1,
     startedAt: NOW_ISO(),
     completedAt: null,
     settings: {

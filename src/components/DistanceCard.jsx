@@ -159,9 +159,15 @@ export default function DistanceCard({ onToast }) {
   // TASK-009 §3: recomputed on every render from the live localValue, so
   // the diff readout updates immediately as the wheel changes — no separate
   // "did it change" tracking needed.
-  const diff = gpsValueM != null ? localValue - gpsValueM : 0;
-  const absDiff = Math.abs(diff);
-  const showShareButton = absDiff >= SHARE_DIFF_THRESHOLD_M;
+  // P0-4 fix: with NO GPS baseline at all (gpsValueM == null), there's
+  // nothing to compare against — any entered value is new, real
+  // information and should always be shareable. The old `diff = 0`
+  // fallback made showShareButton permanently false whenever GPS never
+  // got a fix, silently turning every tap into a no-op "확인 완료" no
+  // matter what the person entered.
+  const diff = gpsValueM != null ? localValue - gpsValueM : null;
+  const absDiff = diff != null ? Math.abs(diff) : null;
+  const showShareButton = gpsValueM == null ? true : absDiff >= SHARE_DIFF_THRESHOLD_M;
   const diffLabel = gpsValueM == null ? "" : absDiff < SHARE_DIFF_THRESHOLD_M ? "GPS와 동일" : `GPS 대비 ${formatSignedDiff(diff)}`;
   const warningText = getGpsDiffWarning(gpsValueM, localValue);
 

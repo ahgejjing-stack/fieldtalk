@@ -8,6 +8,7 @@ import {
   MapPin,
   Mic,
   PartyPopper,
+  Radio,
   Sparkles,
   ThumbsUp,
   Trophy,
@@ -15,8 +16,14 @@ import {
 } from "lucide-react";
 import { useAudioEngine } from "../hooks/useAudioEngine.js";
 import { useRound } from "../context/useRound.js";
+import { useCommunication } from "../context/useCommunication.js";
 import SoundButton, { reasonToMessage } from "./SoundButton.jsx";
 import PersonalizedCheer from "./PersonalizedCheer.jsx";
+
+// RC4 P1 — prototype_test sounds (the internal-only E2E test chime) must
+// never appear for a real user in production; DEV-gated the same way
+// other developer-only surfaces in this app are.
+const isDevModeGallery = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 
 // Catalog items store an icon *name* (plain data, JSON-safe) — this is the
 // only place that maps those names to actual lucide-react components.
@@ -31,6 +38,7 @@ const ICONS = {
   check: Check,
   "check-circle": CheckCircle2,
   "map-pin": MapPin,
+  radio: Radio,
 };
 
 // The 5 tiles a person sees first — "개인응원" reuses the existing
@@ -80,6 +88,7 @@ function saveFavorites(set) {
 export default function GalleryPanel({ isOpen, onClose, onToast }) {
   const { catalog, play } = useAudioEngine();
   const { dispatch, actions, meId } = useRound();
+  const communication = useCommunication(); // P0-5 fix
   const [activeCategory, setActiveCategory] = useState(null);
   const [favorites, setFavorites] = useState(() => loadFavorites());
 
@@ -92,10 +101,12 @@ export default function GalleryPanel({ isOpen, onClose, onToast }) {
 
   const itemsForCategory = (catId) => {
     if (catId === "favorites") {
-      return catalog.filter((s) => favorites.has(s.id) && s.enabled);
+      return catalog.filter((s) => favorites.has(s.id) && s.enabled && (isDevModeGallery || s.rightsStatus !== "prototype_test"));
     }
     const catalogCategory = CATALOG_CATEGORY_MAP[catId];
-    return catalog.filter((s) => s.category === catalogCategory && s.enabled);
+    return catalog.filter(
+      (s) => s.category === catalogCategory && s.enabled && (isDevModeGallery || s.rightsStatus !== "prototype_test")
+    );
   };
 
   const toggleFavorite = (soundId) => {
@@ -123,6 +134,14 @@ export default function GalleryPanel({ isOpen, onClose, onToast }) {
           actorPlayerId: meId,
         })
       );
+      // P0-5 fix — this was purely local before; teammates never
+      // received a cheer no matter what was tapped.
+      communication.shareSoundPlayed?.({
+        soundId: sound.id,
+        category: sound.category,
+        label: sound.label,
+        targetUserIds: null, // broadcast to everyone in the room for now — no per-target selection UI here yet
+      });
       onClose();
     } else {
       onToast(reasonToMessage(result.reason));

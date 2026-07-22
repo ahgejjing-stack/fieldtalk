@@ -182,10 +182,22 @@ export function roundReducer(state, action) {
           })
         : state.holes;
 
+      // P1-2 fix — a measured/shared distance is only meaningful for the
+      // hole it was taken on; carrying it forward silently made a new
+      // hole show the previous hole's number until someone measured
+      // again. GPS baseline (distance.gps) is untouched — it's a
+      // separate always-on field this Sprint doesn't change.
+      const playersWithFreshDistance = state.players.map((p) => ({
+        ...p,
+        distance: { ...p.distance, manual: null },
+      }));
+
       return {
         ...state,
         currentHoleNumber: nextNumber,
         holes: holesWithNextStarted,
+        players: playersWithFreshDistance,
+        lastDistanceShare: null,
         events: appendEvent(state.events, "HOLE_ADVANCED", state, {
           fromHole: state.currentHoleNumber,
           toHole: nextNumber,

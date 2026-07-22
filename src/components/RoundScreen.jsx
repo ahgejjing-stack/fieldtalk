@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Mic, PartyPopper, Share2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mic, PartyPopper, Share2, X } from "lucide-react";
 import { useRound } from "../context/useRound.js";
 import { useNowTick } from "../hooks/useNowTick.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
@@ -179,6 +179,12 @@ export default function RoundScreen({ onBack, onToast }) {
   // selected inside it. Rendered outside .ft-round-scroll (see JSX below) so
   // it never affects — or is affected by — the page's scroll position.
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [showEndRoundConfirm, setShowEndRoundConfirm] = useState(false); // P1-4 fix
+
+  const handleEndRoundConfirmed = () => {
+    dispatch(actions.roundComplete());
+    setShowEndRoundConfirm(false);
+  };
 
   /* Demo: simulate an incoming transmission from a companion via the Round
    * Engine itself (still respects the "only one speaker" guard — if the
@@ -243,6 +249,13 @@ export default function RoundScreen({ onBack, onToast }) {
               <span className="ft-compact-strokes">({totalStrokesLabel})</span>
             </div>
           </div>
+          <button
+            className="ft-icon-btn"
+            onClick={() => setShowEndRoundConfirm(true)}
+            aria-label="라운드 종료"
+          >
+            <X size={16} strokeWidth={2.1} />
+          </button>
           <button
             className="ft-icon-btn"
             onClick={() => onToast("스코어카드 공유 기능은 준비 중입니다")}
@@ -334,7 +347,7 @@ export default function RoundScreen({ onBack, onToast }) {
         <div className="ft-section">
           {round.status === "completed" ? (
             <div className="ft-round-complete-summary">
-              <div className="ft-round-complete-title">{round.holes.length}홀 완료</div>
+              <div className="ft-round-complete-title">{round.currentHoleNumber}홀 완료</div>
               <div className="ft-round-complete-scores">
                 {round.players.map((p) => {
                   const strokes = selectPlayerTotalStrokes(round, p.id);
@@ -394,6 +407,24 @@ export default function RoundScreen({ onBack, onToast }) {
       </div>
 
       <GalleryPanel isOpen={galleryOpen} onClose={() => setGalleryOpen(false)} onToast={onToast} />
+
+      {showEndRoundConfirm && (
+        <div className="ft-room-warning-confirm">
+          <p>
+            라운드를 종료할까요?
+            <br />
+            지금까지의 스코어가 저장되고 홈으로 돌아갑니다.
+          </p>
+          <div className="ft-pin-position-pills">
+            <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(false)}>
+              계속 플레이
+            </button>
+            <button className="ft-pin-pill is-active" onClick={handleEndRoundConfirmed}>
+              종료
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

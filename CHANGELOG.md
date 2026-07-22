@@ -2,6 +2,92 @@
 
 ## Unreleased
 
+### RC4 Device Test Preparation — 완료
+
+변경 파일: `NetworkPttClient.js`, `PttSignalingClient.js`, `CommunicationProvider.jsx`, `RoundProvider.jsx`, `GalleryPanel.jsx`, `SoundButton.jsx`, `P0DebugOverlay.jsx`, `signalingServer.js`, `soundCatalog.json`, 신규 `public/sounds/test/fieldtalk-test-chime.wav`, `scripts/build_preview.py`(신규 위치, 기존 `/tmp` 스크립트를 프로젝트로 편입), `docs/RC4_FIELD_TEST_CHECKLIST.md`(신규).
+
+#### P0 — Stage 10 임계값 불일치 수정 (실측 확인)
+지적하신 그대로였다: `rawLevel = rms * 4`로 확대해서 화면에 쓰면서, 판정은 확대 전 `rms`를 그대로 비교하고 있었다. `rawLevel` 기준으로 통일하고, 단일 순간 피크가 아니라 **150ms 연속 지속**을 요구하도록 변경. 이름을 `remoteSignalDetected`(자동)와 `audiblePlaybackConfirmed`(항상 `null`, 코드가 절대 자동 설정하지 않는 수동 전용 필드)로 분리했다. Debug Overlay에 현재 RMS/rawLevel/임계값/최대 RMS/최대 rawLevel/마지막 오류 name·message 전부 추가.
+
+#### P1 — 테스트 음원 (실제로 생성·서빙 확인, 재생 완결은 미확인)
+`public/sounds/test/fieldtalk-test-chime.wav`를 직접 생성했다(880Hz→1320Hz 2음 사인파, 350ms, 저작권 문제 없음). 카탈로그에 `rightsStatus: "prototype_test"`로 등록, 라벨 `[TEST]` 표시, Production에서는 필터링되어 안 보임(DEV 게이팅). **실측**: 실제 2기기 테스트에서 파일이 HTTP 200으로 정상 로드되는 것까지 확인했다. 클릭 시 오류 토스트는 안 떴다(실패 신호 없음). **다만 서버의 `[SOUND PLAYED]` 로그가 뜨는 것까지는 이번엔 확인하지 못했다** — 파일 로드는 성공했지만 네트워크 브로드캐스트가 실제로 발동했는지, 그래서 자기재생/상대재생/중복방지/재입장 전체가 end-to-end로 도는지는 미확정이다.
+
+#### P1 — 홀 진행 동기화 방어 (전부 실측 확인)
+- **호스트 전용 검증**: 서버에 `registry.isHost()` 체크 추가(round_start_request와 동일 패턴). **실제 위조 공격으로 확인**: UI를 거치지 않고 직접 WebSocket으로 게스트인 척 `hole_advance`를 보내봤고, 서버가 `hole_advance_denied`(reason: not_host)로 정확히 거부하는 것을 확인했다.
+- **중복 방지**: 기존 리듀서의 "홀은 완료 상태여야 다음으로 넘어간다" 가드가 이미 중복 메시지로 인한 스킵을 막고 있음을 코드 분석으로 확인(별도 코드 추가 불필요, 기존 아키텍처가 이미 안전).
+- **재입장 복구**: `hole_sync` 메시지를 신규 구현. 처음엔 "멤버 수 증가"를 트리거로 썼는데 실제 테스트에서 재연결 시 멤버 수가 실제로는 안 바뀐다는 걸(upsert라서) 발견하고, `member_online` 이벤트 자체를 감지하는 방식으로 수정. **실제 재연결 테스트로 확인**: A가 2홀→3홀로 이동하는 동안 B를 강제로 끊었다가(진짜 WebSocket 종료) 복귀시켰더니, B가 정확히 3홀로 따라잡는 것을 확인했다.
+
+#### P2 — 병합 스크립트 회귀 방지 (근본 원인 수정 + 검증 자동화)
+이번 세션에서 3번 반복된 버그(`import` 줄 끝 인라인 주석이 다음 줄을 통째로 삼킴)의 **근본 원인**을 고쳤다 — 주석을 제거한 뒤 `;`로 끝나는지 검사하도록 변경. 스크립트 끝에 두 가지 자동 검증 추가: 중복 top-level const 검사, 실제 esbuild 문법/참조 체크. **이 가드가 실제로 작동하는 것을 확인했다** — 이번 세션에서 새로 만든 `isDevMode` 변수가 기존 코드와 충돌하는 걸 가드가 즉시 잡아냈고, 그 자리에서 고쳤다. 스크립트를 `/tmp`에서 `scripts/build_preview.py`로 프로젝트에 편입시켜 실제 산출물이 되도록 했다.
+
+단위 테스트 61개 무회귀, 번들 체크 통과, 미리보기 실제 브라우저 스모크 테스트 통과(에러 0).
+
+### RC4 Continuation — P0 Lifecycle Tracker, P1 완료, P2 부분 확인
+
+변경 파일: `NetworkPttClient.js`, `WebRtcTransport.js`, `CommunicationProvider.jsx`, 신규 `P0DebugOverlay.jsx`, `App.jsx`, `app.css`, `signalingServer.js`, `PttSignalingClient.js`, `RoundProvider.jsx`.
+
+#### P0 — 10단계 Lifecycle 추적기 구축 및 검증
+`_p0Lifecycle` 추적 객체와 `_logP0Stage()` 헬퍼로 10단계(Room Join, Offer 생성, Answer 수신, ICE Connection State, Peer Connection State, Remote Track 수신, Audio Element Attach, play() 호출, play() 결과, 실제 음성 수신) 전부에 `[FIELDTALK P0]` 접두어 로그 + DEV 전용 Debug Overlay를 추가했다.
+
+**실제 2기기 시뮬레이션으로 확인**: 최초 연결·재연결 양쪽에서 9단계(roomJoin, offerCreated, answerReceived, iceConnectionState, peerConnectionState, remoteTrackReceived, audioElementAttach, playCalled, playResult)가 PASS로 기록되는 것을 콘솔 로그로 직접 확인했다. Offerer(B)·Answerer(A) 양쪽 다 확인.
+
+**10단계(실제 음성 수신)는 이 샌드박스에서 확정 못함**: 추적해보니 `isReceiving`은 정확히 true로 토글되고 RMS 값도 0.0464까지 올라갔다(임계값 0.06에 근접) — 페이크 테스트 음성 파일이 조용해서 못 넘은 것으로 보이며, 코드 결함의 증거는 찾지 못했다. 실제 음성이면 더 크므로 문제없을 가능성이 높지만, 이건 추정이지 확인이 아니다.
+
+#### P1 — 체크리스트 10개 전부 Sandbox 검증 완료, 그 과정에서 중대한 버그 발견
+"홀 이동" 항목을 검증하다가 **홀 진행 상태가 전혀 네트워크로 동기화되지 않는다**는 걸 발견했다 — A가 홀을 완료해도 B의 Round Engine은 영원히 이전 홀에 머물러 있었다. 거리 공유·응원과 똑같이 "로컬 전용이었다" 패턴이었다. 서버에 `hole_advance` 릴레이를 추가하고 송수신 경로(`RoundProvider.jsx`의 `completeCurrentHoleAndAdvance`가 이제 네트워크로도 알림)를 구현했다.
+
+**Sandbox로 confirm된 10개 전부**: 양쪽 GPS 있음/A만/B만/양쪽 없음, A 실측 공유, B 실측 공유, 재공유, 홀 이동(수정 후), 재입장(reconnect 후에도 공유 정상), 새 라운드 시작(리셋 정상).
+
+#### P2 — Sandbox 한계 재확인, 실제 프로젝트 자산 문제도 발견
+TTS 기반 사운드는 헤드리스 Chromium에서 `speechSynthesis` 자체가 동작 안 해 실패(샌드박스 전용 한계, 실제 iPhone Safari는 다를 가능성 높음). File 기반 사운드("오케이! (남성)" 등)로 전환해서 재시도했으나 **"사운드 파일을 찾을 수 없어요"** — `public/sounds/` 디렉터리를 직접 확인해보니 **README.md 안내 파일만 있고 실제 오디오 자산이 프로젝트에 하나도 없었다.** 이건 샌드박스 한계가 아니라 **실제 프로덕션에서도 똑같이 실패할 프로젝트 자체의 자산 누락**이다. 라이선스가 필요한 콘텐츠라 제가 직접 만들어 넣을 수 있는 범위가 아니다.
+
+자기 재생/중복 방지(`eventId`, 이전 Sprint에서 코드로 추가)/재입장 후 동작은 실제 소리 재생이 실패하는 한 end-to-end로 확인할 방법이 없다.
+
+단위 테스트 61개 무회귀, 번들 체크 통과.
+
+### RC3 — P1-1 원인 조사 및 부수 발견 (진단 우선, 정직하게 보고)
+
+변경 파일: `NetworkPttClient.js`, `CommunicationProvider.jsx`, `App.jsx`, `app.css`, `signalingServer.js`.
+
+#### P1-1 (재연결 후 PTT 음성 복구 안 됨) — 유력한 원인 발견, 실기기 미검증
+
+코드를 전부 다시 훑었다. 요청하신 7개 항목 중 6개는 아키텍처 검토로 안전함을 확인했다:
+- **WebSocket 재연결**: WEEK6~8에서 확인된 대로 정상.
+- **Peer 객체 재생성**: `_reconcileMembers`가 room_joined 때마다 정확히 재생성.
+- **참가자 ID 변경**: identity는 localStorage에 저장되고, 네트워크 재연결은 페이지 새로고침을 하지 않으므로 ID가 바뀔 경로가 없음.
+- **PTT subscription 재등록**: `_wireSignaling()`은 생성자에서 한 번만 실행되고 리스너는 client 인스턴스(웹소켓이 아니라)에 붙어있어서, 재연결로 웹소켓이 교체돼도 리스너는 그대로 살아있음 — 재등록이 필요 없는 구조.
+- **MediaStream 상태**: 마이크 스트림은 재연결 시 유지되도록 이미 설계돼 있음(WEEK7 Priority 2).
+- **AudioContext resume 여부**: 코드 전체에서 `.resume()`이 한 번도 호출되지 않음을 확인했지만, 실제 음성 출력은 AudioContext가 아니라 별도의 `<audio autoplay>` 엘리먼트를 통해 나가므로 이 자체는 무관함(레벨미터용 AudioContext만 관련).
+
+**가장 유력한 원인(코드로 확인, 실기기 미검증)**: 재연결 시 `_setupRemoteMedia()`가 완전히 새로운 `<audio>` 엘리먼트를 만들고 `.play()`를 호출하는데, 이 호출이 **사용자 제스처와 무관한 비동기 네트워크 이벤트 안에서** 일어난다. iOS Safari의 autoplay 정책상 이런 호출은 조용히 차단될 수 있다 — 그리고 실제로 실패를 감지하는 코드(`lastError: "remote_audio_playback_blocked"`)는 이미 있었는데, **그걸 화면 어디에도 보여주거나 재시도할 방법이 전혀 없었다.** "UI는 복구되는데 음성만 안 들린다"는 증상과 정확히 일치한다.
+
+**추가한 것**: 실제 탭(제스처) 안에서 재생을 재시도하는 `retryRemoteAudioPlayback()`과, 차단 상태일 때만 뜨는 탭 가능한 배너("상대방 음성이 재생되지 않고 있습니다. 탭하여 다시 시도하세요"). 이건 **감지되면 복구할 수단**이지, 애초에 안 막히게 하는 근본 수정은 아니다 — 정직하게 말씀드리면, iOS Safari의 정확한 차단 조건을 실기기 없이는 100% 확신할 수 없다.
+
+#### 응원 기능 검증 — 샌드박스 한계로 완결 못함, 부수적 진짜 버그는 찾아 고침
+실제 UI로 응원 버튼을 눌러 검증하려 했으나, 이 샌드박스는 TTS(`speechSynthesis`)가 동작하지 않아 "음성 재생에 실패했어요"로 막혀서 **자기 재생/중복 없음/재입장 후 정상 여부를 실제로 끝까지 확인하지 못했다.** 다만 코드를 훑던 중 진짜 문제 하나를 발견해서 고쳤다: `sound_played` 메시지에 **중복 제거 수단이 전혀 없었다** — 네트워크가 같은 메시지를 두 번 전달하면 (매번 새 JSON 객체라) 그대로 두 번 재생될 구조였다. 서버가 매 브로드캐스트마다 `eventId`를 붙이고, 클라이언트가 마지막으로 처리한 id와 같으면 무시하도록 추가했다.
+
+#### GPS 없는 상태에서 실측 공유 — 이번엔 재검증 못함
+지난 Sprint에서 송신 측 버그(diff=0 강제)는 고쳤고 서버 수신까지 확인했지만, 수신 측 화면 갱신은 그때도 양쪽 다 GPS가 없는 테스트라 결론을 못 냈었다. 이번엔 응원 기능 디버깅에 시간을 많이 써서, 수신자만 GPS가 있는 비대칭 상황을 다시 세팅해서 검증하지 못했다.
+
+단위 테스트 61개 무회귀.
+
+### RC2 Bug Fix Sprint — P0 완료, P1 일부 완료
+
+변경 파일: `HomeScreen.jsx`, `DistanceCard.jsx`, `GalleryPanel.jsx`, `App.jsx`, `roundSeed.js`, `roundReducer.js`, `RoundScreen.jsx`, `signalingServer.js`, `NetworkPttClient.js`, `PttSignalingClient.js`, `CommunicationProvider.jsx`.
+
+#### P0 전부 완료
+- **P0-1/2/3 (Player List·동기화·Round Demo Player)**: 근본 원인 하나 — Home 화면의 Mock 동반자 시뮬레이션이 실제 참가자와 같은 Room Engine 상태(`MAX_ROOM_MEMBERS: 4`)를 공유해서, 예전 테스트에서 남은 Mock "참여" 상태가 실제 참가자의 자리를 차지하고 있었다. Mock 시뮬레이션을 DEV 전용으로 옮기고 Production은 실제 `room.members`를 표시하도록 수정. 실제 2기기 테스트로 Player List에 진짜 참가자 이름이 뜨는 것 확인(RoundScreen/DistanceCard/PTT Target 전부 같은 `round.players`를 참조하므로 셋 다 함께 해결됨).
+- **P0-4 (B→A 거리 공유 안 됨)**: GPS 좌표가 아직 없을 때(`gpsValueM === null`) 차이값이 무조건 0으로 계산돼 "공유할 것 없음"으로 처리되던 버그. 수정 후 서버가 `[DISTANCE SHARE]`를 정상 수신하는 것까지 확인.
+- **P0-5 (응원 버튼 전달 안 됨)**: 애초에 네트워크로 전송된 적이 없었음(로컬 재생만). 서버 릴레이 + 클라이언트 송수신 왕복 경로 신규 구현 — 대상은 아직 전체 브로드캐스트만 지원(선택 대상 지정 UI는 범위 밖).
+
+#### P1 — 3/4 완료
+- **P1-2 (홀 이동 시 거리 데이터 안 갱신)**: `NEXT_HOLE`이 `state.players`를 전혀 건드리지 않아서 이전 홀의 측정값(`distance.manual`)이 계속 남아있던 버그. 홀 이동 시 전 플레이어의 `manual` 값과 `lastDistanceShare`를 초기화하도록 수정(GPS 기준값 `distance.gps`는 이번 범위 밖 — 애초에 이 코드베이스에서 동적으로 갱신되는 곳이 없음).
+- **P1-3 (시작 홀 7→1)**: 데모 시드의 "진짜 데이터가 채워진" 홀을 7에서 1로 이동. Room 기반 라운드는 원래부터 항상 1번 홀 기본값이었음(영향 없었음) — 데모 seed(`라운드 시작` 버튼)만의 문제였음.
+- **P1-4 (라운드 종료 기능 없음)**: 18홀 완료 후 자동으로만 뜨던 완료 화면을, 플레이 중 언제든 수동으로 종료할 수 있는 버튼(확인 모달 포함)으로 확장. 기존 `roundComplete()` 액션과 완료 화면 인프라를 그대로 재사용(신규 엔진 로직 없음). 완료 화면 제목도 "18홀 완료" 고정이었던 걸 실제 도달한 홀 수로 수정.
+- **P1-1 (재연결 후 PTT 음성 복구 안 됨)**: 착수하지 못했다. 이전 Sprint(WEEK7/8)의 샌드박스 시뮬레이션에서는 재연결+양방향 PTT를 18/18 성공으로 검증했었는데, 실제 아이폰에서는 실패한다는 보고다 — 샌드박스 시뮬레이션과 실기기 사이에 제가 아직 포착 못한 차이가 있다는 뜻이고, 서둘러 잘못된 진단으로 수정하기보다 다음 턴에 제대로 조사하기로 판단했다.
+
+단위 테스트 61개 무회귀.
+
 ### Join Flow 100% 성공을 최우선으로 — 실제 재현 시나리오로 검증
 
 변경 파일: `App.jsx`, `HomeScreen.jsx`.

@@ -174,6 +174,64 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
           break;
         }
 
+        case "hole_sync": {
+          // RC4 P1 defense — rejoin hole-state recovery. Host-only, same
+          // reasoning as hole_advance: only the host's view of "what
+          // hole are we actually on" is authoritative.
+          const { roomId, currentHoleNumber, targetUserId } = msg;
+          if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
+          if (!registry.isHost(roomId, boundUserId)) return; // silently ignore -- this is a background sync, not a user-facing action worth a denial toast
+          log("[HOLE SYNC]", { roomId, from: boundUserId, currentHoleNumber, targetUserId });
+          if (targetUserId) {
+            registry.sendTo(roomId, targetUserId, { type: "hole_sync", roomId, currentHoleNumber });
+          } else {
+            registry.broadcast(roomId, { type: "hole_sync", roomId, currentHoleNumber }, boundUserId);
+          }
+          break;
+        }
+
+        case "hole_advance": {
+          // RC4 P1 fix — hole progression was NEVER networked at all.
+          // Whoever completes a hole locally also tells the room, same
+          // broadcast-to-others pattern as distance_share/sound_played.
+          // RC4 P1 defense review — host-only, same pattern as
+          // round_start_request: advancing the WHOLE room's shared hole
+          // state isn't something any individual guest should be able
+          // to unilaterally force (server is the source of truth on
+          // who's host, never the client's claim).
+          const { roomId, completedHoleNumber, nextHoleNumber } = msg;
+          if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
+          if (!registry.isHost(roomId, boundUserId)) {
+            registry.sendTo(roomId, boundUserId, { type: "hole_advance_denied", roomId, reason: "not_host" });
+            log("[HOLE ADVANCE DENIED]", { roomId, senderUserId: boundUserId, reason: "not_host" });
+            return;
+          }
+          log("[HOLE ADVANCE]", { roomId, from: boundUserId, completedHoleNumber, nextHoleNumber });
+          registry.broadcast(
+            roomId,
+            { type: "hole_advance", roomId, completedHoleNumber, nextHoleNumber, fromUserId: boundUserId },
+            boundUserId
+          );
+          break;
+        }
+
+        case "sound_played": {
+          // P0-5 fix — cheer/sound effects were never networked at all,
+          // purely local playback. Same broadcast-to-others pattern as
+          // distance_share. eventId lets the receiver ignore an exact
+          // duplicate delivery (RC3 review §"중복 재생이 없는지").
+          const { roomId, soundId, category, label, targetUserIds } = msg;
+          if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
+          const eventId = `${boundUserId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          log("[SOUND PLAYED]", { roomId, from: boundUserId, soundId, targetUserIds, eventId });
+          registry.broadcast(
+            roomId,
+            { type: "sound_played", roomId, soundId, category, label, actorUserId: boundUserId, targetUserIds, eventId },
+            boundUserId
+          );
+          break;
+        }
+
         case "distance_share": {
           // RC1 Networking Recovery — distance sharing was local-only
           // until now: DistanceCard dispatched straight into the local

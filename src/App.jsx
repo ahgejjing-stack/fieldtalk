@@ -16,6 +16,9 @@ import { IdentityProvider } from "./context/IdentityProvider.jsx";
 import { useIdentity } from "./context/useIdentity.js";
 import { DEFAULT_IDENTITY_USER_ID } from "./identity/runtimeIdentity.js";
 import NameEntryScreen from "./components/NameEntryScreen.jsx";
+import P0DebugOverlay from "./components/P0DebugOverlay.jsx";
+
+const isDevModeTopLevel = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 import { useCommunication } from "./context/useCommunication.js";
 import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
 
@@ -268,6 +271,26 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communication.receivedDistanceShare]);
 
+  // P0-5 fix — the receiving side of cheer/sound sharing, same pattern
+  // as distance sharing above. The sender already applied it locally
+  // (GalleryPanel.jsx dispatches directly); this makes a TEAMMATE's
+  // cheer actually show up on MY screen (Event Board bubble via the
+  // existing SOUND_PLAYED reducer case), which never happened before.
+  useEffect(() => {
+    const payload = communication.receivedSoundPlayed;
+    if (!payload) return;
+    dispatch(
+      actions.soundPlayed({
+        soundId: payload.soundId,
+        category: payload.category,
+        label: payload.label,
+        actorPlayerId: payload.actorUserId,
+      })
+    );
+    communication.clearReceivedSoundPlayed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.receivedSoundPlayed]);
+
   return (
     <div className="ft-root">
       <div className="ft-phone">
@@ -292,6 +315,18 @@ function AppShell() {
         {screen === "identitySelect" && <IdentitySelectScreen onBack={() => setScreen("home")} />}
         {screen !== "splash" && <div className="ft-home-indicator" />}
         {toast && <div className="ft-global-toast">{toast}</div>}
+        {communication.lastError === "remote_audio_playback_blocked" && (
+          <button
+            type="button"
+            className="ft-audio-unblock-banner"
+            onClick={() => communication.retryRemoteAudioPlayback?.()}
+          >
+            상대방 음성이 재생되지 않고 있습니다. 탭하여 다시 시도하세요.
+          </button>
+        )}
+        {isDevModeTopLevel && (
+          <P0DebugOverlay p0Lifecycle={communication.p0Lifecycle} p0LevelDebug={communication.p0LevelDebug} />
+        )}
       </div>
     </div>
   );

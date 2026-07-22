@@ -38,7 +38,9 @@ export default function SoundButton({ sound, icon: Icon, onPlay, forceShowRights
   const disabled = isBusy || isCoolingDown;
   const showRightsBadge =
     (forceShowRightsBadge ?? isDevBuild) &&
-    (sound.rightsStatus === "prototype_only" || sound.rightsStatus === "review_required");
+    (sound.rightsStatus === "prototype_only" ||
+      sound.rightsStatus === "review_required" ||
+      sound.rightsStatus === "prototype_test");
 
   const handleClick = async () => {
     if (disabled) return;
@@ -63,7 +65,7 @@ export default function SoundButton({ sound, icon: Icon, onPlay, forceShowRights
     >
       {showRightsBadge && (
         <span className={`ft-rights-badge is-${sound.rightsStatus}`}>
-          {sound.rightsStatus === "prototype_only" ? "TEST" : "검토중"}
+          {sound.rightsStatus === "prototype_only" || sound.rightsStatus === "prototype_test" ? "TEST" : "검토중"}
         </span>
       )}
       <Icon size={20} strokeWidth={2} />

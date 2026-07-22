@@ -139,6 +139,13 @@ export function CommunicationProvider({
       voiceDetected: state.voiceDetected,
       isTesting: state.isTesting ?? false,
       lastError: state.lastError,
+      lastAudioPlaybackAttempt: state.lastAudioPlaybackAttempt ?? null,
+      p0Lifecycle: state.p0Lifecycle ?? null,
+      p0LevelDebug: state.p0LevelDebug ?? null,
+      lastMemberOnlineEvent: state.lastMemberOnlineEvent ?? null,
+      retryRemoteAudioPlayback: clientRef.current.retryRemoteAudioPlayback
+        ? () => clientRef.current.retryRemoteAudioPlayback()
+        : null,
       connectionState: state.connectionState ?? "disconnected",
       retryCount: state.retryCount ?? 0,
       nextRetrySec: state.nextRetrySec ?? null,
@@ -153,6 +160,27 @@ export function CommunicationProvider({
         : null,
       clearReceivedDistanceShare: clientRef.current.clearReceivedDistanceShare
         ? () => clientRef.current.clearReceivedDistanceShare()
+        : null,
+      receivedSoundPlayed: state.receivedSoundPlayed ?? null,
+      shareSoundPlayed: clientRef.current.shareSoundPlayed
+        ? (payload) => clientRef.current.shareSoundPlayed(payload)
+        : null,
+      clearReceivedSoundPlayed: clientRef.current.clearReceivedSoundPlayed
+        ? () => clientRef.current.clearReceivedSoundPlayed()
+        : null,
+      receivedHoleAdvance: state.receivedHoleAdvance ?? null,
+      shareHoleAdvance: clientRef.current.shareHoleAdvance
+        ? (payload) => clientRef.current.shareHoleAdvance(payload)
+        : null,
+      clearReceivedHoleAdvance: clientRef.current.clearReceivedHoleAdvance
+        ? () => clientRef.current.clearReceivedHoleAdvance()
+        : null,
+      receivedHoleSync: state.receivedHoleSync ?? null,
+      shareHoleSync: clientRef.current.shareHoleSync
+        ? (payload) => clientRef.current.shareHoleSync(payload)
+        : null,
+      clearReceivedHoleSync: clientRef.current.clearReceivedHoleSync
+        ? () => clientRef.current.clearReceivedHoleSync()
         : null,
       remoteSpeakerUserId: state.remoteSpeakerUserId ?? null,
       remoteSpeakerName: state.remoteSpeakerName ?? null,

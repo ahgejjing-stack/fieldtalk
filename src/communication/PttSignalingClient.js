@@ -162,6 +162,21 @@ export class PttSignalingClient {
 
   // RC1 Networking Recovery — distance sharing was never sent over the
   // network at all before this; see DistanceCard.jsx/NetworkPttClient.js.
+  // P0-5 fix — cheer/sound effects were never sent over the network at all.
+  // RC4 P1 defense — rejoin hole-state recovery.
+  sendHoleSync({ currentHoleNumber, targetUserId }) {
+    this._send({ type: "hole_sync", roomId: this.roomId, currentHoleNumber, targetUserId });
+  }
+
+  // RC4 P1 fix — hole progression was never sent over the network at all.
+  sendHoleAdvance({ completedHoleNumber, nextHoleNumber }) {
+    this._send({ type: "hole_advance", roomId: this.roomId, completedHoleNumber, nextHoleNumber });
+  }
+
+  sendSoundPlayed({ soundId, category, label, targetUserIds }) {
+    this._send({ type: "sound_played", roomId: this.roomId, soundId, category, label, targetUserIds });
+  }
+
   sendDistanceShare({ referenceDistanceM, source, holeNumber }) {
     this._send({
       type: "distance_share",

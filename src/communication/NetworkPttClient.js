@@ -99,6 +99,15 @@ export class NetworkPttClient extends PttClient {
     this._preparePromise = null;
     this._transports = new Map(); // userId -> WebRtcTransport
     this._peerStates = new Map(); // RC1-WEEK7 §4 — userId -> raw RTCPeerConnection state, tracked separately from top-level connectionState
+    this._lastSoundEventId = null; // RC3 review — sound_played dedup
+
+    // RC4 P0 — WebRTC Reconnect Lifecycle tracker. Every stage gets
+    // exactly one PASS/FAIL record per attempt, logged with the
+    // [FIELDTALK P0] prefix and surfaced via getState().p0Lifecycle for
+    // the DEV Debug Overlay. Reset at the start of each connectToRoom()
+    // attempt so a reconnect's trace never mixes with the initial
+    // connection's.
+    this._p0Lifecycle = this._makeEmptyP0Lifecycle();
     this._remoteAudioEl = null;
     this._remoteAnalyserCtx = null;
     this._remoteAnalyser = null;
@@ -125,6 +134,51 @@ export class NetworkPttClient extends PttClient {
     }
 
     this._wireSignaling();
+  }
+
+  // ---- RC4 P0: WebRTC Reconnect Lifecycle tracker -----------------------
+
+  _makeEmptyP0Lifecycle() {
+    return {
+      roomJoin: null,
+      offerCreated: null,
+      answerReceived: null,
+      iceConnectionState: null,
+      peerConnectionState: null,
+      remoteTrackReceived: null,
+      audioElementAttach: null,
+      playCalled: null,
+      playResult: null,
+      // RC4 P0 review — renamed from actualAudioReceived. This is what
+      // the analyser can actually attest to: a real, sustained,
+      // non-silence signal was measured. It is NOT the same claim as
+      // "a person heard audio" — see audiblePlaybackConfirmed below.
+      remoteSignalDetected: null,
+      // RC4 P0 review — deliberately NEVER set by any code in this
+      // client. This field only exists so the Debug Overlay has a
+      // placeholder reminding whoever's testing that automatic
+      // detection stops at remoteSignalDetected — actually hearing the
+      // voice is a real-device, human-confirmed step, not something
+      // code can claim to have verified.
+      audiblePlaybackConfirmed: null,
+    };
+  }
+
+  /** One call site for every stage — always logs with the required
+   * [FIELDTALK P0] prefix, always updates the same tracker object the
+   * Debug Overlay reads, and always includes attempt# and whether this
+   * is the initial connection or a reconnect (attempt > 1), so a real
+   * device's console log is directly comparable stage-by-stage between
+   * the two. */
+  _logP0Stage(stage, status, detail) {
+    const entry = { status, detail, at: new Date().toISOString(), attempt: this._reconnectAttempt ?? 0 };
+    this._p0Lifecycle = { ...this._p0Lifecycle, [stage]: entry };
+    if (typeof console !== "undefined") {
+      console.log(
+        `[FIELDTALK P0] ${stage} = ${status}${detail ? " | " + JSON.stringify(detail) : ""} (attempt=${entry.attempt})`
+      );
+    }
+    this._setState({ p0Lifecycle: this._p0Lifecycle });
   }
 
   subscribe(listener) {
@@ -231,6 +285,43 @@ export class NetworkPttClient extends PttClient {
    * does NOT release the microphone itself (release() is a separate,
    * broader scope — a connection failure shouldn't necessarily force the
    * user to re-grant mic permission next time). Idempotent. */
+  /** RC3 iOS investigation — the original autoplay attempt in
+   * _setupRemoteMedia() happens as a side effect of a network event
+   * (reconnect, or the initial WebRTC negotiation completing), which is
+   * NOT inside a user-gesture call stack. iOS Safari's autoplay policy
+   * can silently block that. This retry exists specifically to be
+   * called from an actual tap/click handler, where the SAME play() call
+   * is much more likely to be allowed. Safe to call even if there's
+   * nothing to retry (no-ops cleanly). */
+  retryRemoteAudioPlayback() {
+    if (!this._remoteAudioEl) return Promise.resolve({ ok: false, reason: "no_remote_audio" });
+    return this._remoteAudioEl
+      .play()
+      .then(() => {
+        if (this.state.lastError === "remote_audio_playback_blocked") {
+          this._setState({ lastError: null });
+        }
+        this._setState({
+          lastAudioPlaybackAttempt: { ok: true, viaRetry: true, at: new Date().toISOString() },
+        });
+        return { ok: true };
+      })
+      .catch((err) => {
+        const diagnostic = {
+          ok: false,
+          errorName: err?.name ?? "unknown",
+          errorMessage: err?.message ?? String(err),
+          viaRetry: true,
+          at: new Date().toISOString(),
+        };
+        this._setState({ lastError: "remote_audio_playback_blocked", lastAudioPlaybackAttempt: diagnostic });
+        if (typeof console !== "undefined") {
+          console.warn("[FIELDTALK P0] retry play() also rejected:", diagnostic);
+        }
+        return { ok: false, reason: err?.message ?? String(err) };
+      });
+  }
+
   _cleanupConnection(reason) {
     this._cleanupTransmitState(reason);
     this._clearRemoteSpeakerState();
@@ -248,12 +339,14 @@ export class NetworkPttClient extends PttClient {
 
   async connectToRoom() {
     if (this._joined) return { ok: true };
-    this._setState({ connectionState: "connecting" });
+    this._p0Lifecycle = this._makeEmptyP0Lifecycle(); // RC4 P0 — fresh trace per attempt
+    this._setState({ connectionState: "connecting", p0Lifecycle: this._p0Lifecycle });
 
     try {
       await this.signaling.connect();
     } catch (err) {
       this._setState({ connectionState: "failed", lastError: err?.message ?? String(err) });
+      this._logP0Stage("roomJoin", "FAIL", { reason: "signaling_connect_failed", message: err?.message });
       return { ok: false, reason: "signaling_connect_failed" };
     }
 
@@ -274,6 +367,7 @@ export class NetworkPttClient extends PttClient {
         clearTimeout(timeoutId);
         unsubJoined();
         unsubClosed();
+        if (!result.ok) this._logP0Stage("roomJoin", "FAIL", { reason: result.reason });
         resolve(result);
       };
 
@@ -283,6 +377,7 @@ export class NetworkPttClient extends PttClient {
         this._joined = true;
         const members = msg.members ?? [];
         const hasOtherMembers = members.some((m) => m.userId && m.userId !== this.identity.userId);
+        this._logP0Stage("roomJoin", "PASS", { participants: members.length, roomId: msg.roomId });
         // RC1-WEEK7 Priority 4: a solo room has no peer to wait for, so
         // room_joined alone is "connected". A room with other people in
         // it isn't really usable again until at least one of those
@@ -407,6 +502,13 @@ export class NetworkPttClient extends PttClient {
   _wireSignaling() {
     this.signaling.on("member_online", (msg) => {
       this._upsertMember({ userId: msg.userId, displayName: msg.displayName }); // Part E
+      // RC4 P1 defense — fires on EVERY member_online, unlike the
+      // `members` array (which upserts, so a reconnecting member whose
+      // userId is already known doesn't change the array's length at
+      // all). RoundProvider's rejoin-sync needs to know "someone (re)
+      // joined" as an EVENT, not infer it from a length delta that may
+      // never actually happen.
+      this._setState({ lastMemberOnlineEvent: { userId: msg.userId, at: Date.now() } });
       // RC1-WEEK7 Priority 1/3.3 — deterministic rule instead of "whoever
       // was already here offers"; also guards duplicate member_online
       // for the same peer from ever creating a second transport.
@@ -443,7 +545,16 @@ export class NetworkPttClient extends PttClient {
 
     this.signaling.on("answer", async (msg) => {
       const transport = this._transports.get(msg.senderUserId);
-      if (transport) await transport.setRemoteAnswer(msg.sdp);
+      if (!transport) {
+        this._logP0Stage("answerReceived", "FAIL", { senderUserId: msg.senderUserId, reason: "no_transport" });
+        return;
+      }
+      try {
+        await transport.setRemoteAnswer(msg.sdp);
+        this._logP0Stage("answerReceived", "PASS", { senderUserId: msg.senderUserId });
+      } catch (err) {
+        this._logP0Stage("answerReceived", "FAIL", { senderUserId: msg.senderUserId, message: err?.message ?? String(err) });
+      }
     });
 
     this.signaling.on("ice_candidate", async (msg) => {
@@ -497,6 +608,27 @@ export class NetworkPttClient extends PttClient {
       // dispatches teamDistanceShare() into the local Round Engine on
       // arrival, matching how the SENDER already applied it locally.
       this._setState({ receivedDistanceShare: msg });
+    });
+    this.signaling.on("sound_played", (msg) => {
+      // P0-5 fix — same pattern as receivedDistanceShare. RC3 review
+      // §"중복 재생이 없는지": ignore an exact duplicate delivery by
+      // eventId, since a fresh JSON.parse gives every delivery a new
+      // object reference regardless of whether the underlying event was
+      // the same one — without this, React's effect-dependency check
+      // would treat a genuine network-level duplicate as a brand new
+      // cheer and play it twice.
+      if (msg.eventId && msg.eventId === this._lastSoundEventId) return;
+      this._lastSoundEventId = msg.eventId ?? null;
+      this._setState({ receivedSoundPlayed: msg });
+    });
+    this.signaling.on("hole_advance", (msg) => {
+      // RC4 P1 fix — hole progression was never networked at all; same
+      // pattern as receivedDistanceShare/receivedSoundPlayed.
+      this._setState({ receivedHoleAdvance: msg });
+    });
+    this.signaling.on("hole_sync", (msg) => {
+      // RC4 P1 defense — rejoin hole-state recovery.
+      this._setState({ receivedHoleSync: msg });
     });
     this.signaling.on("round_start_denied", (msg) => {
       this._setState({ lastError: `round_start_denied:${msg.reason}` });
@@ -571,6 +703,18 @@ export class NetworkPttClient extends PttClient {
         this._teardownRemoteMedia(); // Part F: remote track ended -> full pipeline teardown
       },
       onConnectionStateChange: (state) => this._handleTransportStateChange(remoteUserId, state),
+      onIceConnectionStateChange: (iceState) => {
+        // RC4 P0 stage 4 — "connected"/"completed" count as PASS; anything
+        // trending toward failure (failed/disconnected/closed) is FAIL;
+        // transitional states (new/checking) are logged as IN_PROGRESS
+        // for visibility without claiming a verdict too early.
+        const status = ["connected", "completed"].includes(iceState)
+          ? "PASS"
+          : ["failed", "disconnected", "closed"].includes(iceState)
+          ? "FAIL"
+          : "IN_PROGRESS";
+        this._logP0Stage("iceConnectionState", status, { remoteUserId, iceState });
+      },
     });
 
     if (this.audioCapture.stream) {
@@ -596,6 +740,9 @@ export class NetworkPttClient extends PttClient {
   _handleTransportStateChange(remoteUserId, state) {
     this._peerStates.set(remoteUserId, state);
     this.signaling.sendConnectionState(state);
+    // RC4 P0 stage 5.
+    const p0Status = state === "connected" ? "PASS" : state === "failed" ? "FAIL" : "IN_PROGRESS";
+    this._logP0Stage("peerConnectionState", p0Status, { remoteUserId, state });
 
     if (state === "failed") {
       this._clearDisconnectedTimer(remoteUserId);
@@ -644,8 +791,14 @@ export class NetworkPttClient extends PttClient {
       await this.prepare();
     }
     const transport = this._getOrCreateTransport(remoteUserId);
-    const offer = await transport.createOffer();
-    this.signaling.sendOffer(remoteUserId, offer);
+    try {
+      const offer = await transport.createOffer();
+      this.signaling.sendOffer(remoteUserId, offer);
+      this._logP0Stage("offerCreated", "PASS", { remoteUserId });
+    } catch (err) {
+      this._logP0Stage("offerCreated", "FAIL", { remoteUserId, message: err?.message ?? String(err) });
+      throw err;
+    }
   }
 
   // ---- Part F: remote audio lifecycle ----------------------------------
@@ -655,13 +808,52 @@ export class NetworkPttClient extends PttClient {
     // tear down whatever was there before setting up the new one.
     this._teardownRemoteMedia();
 
+    // RC4 P0 stage 6 — is this the very first remote stream this client
+    // instance has ever attached, or a later one (necessarily a
+    // reconnect, since the only way to get a second onRemoteTrack is a
+    // fresh peer connection after the first one was torn down)?
+    this._remoteStreamAttachCount = (this._remoteStreamAttachCount ?? 0) + 1;
+    const isReconnectAttach = this._remoteStreamAttachCount > 1;
+    this._p0Lifecycle = { ...this._p0Lifecycle, remoteSignalDetected: null }; // re-evaluate per attach
+    this._p0MaxRms = 0;
+    this._p0MaxRawLevel = 0;
+    this._logP0Stage("remoteTrackReceived", "PASS", {
+      isReconnectAttach,
+      attachCount: this._remoteStreamAttachCount,
+      trackId: stream.getAudioTracks()[0]?.id,
+    });
+
     this._remoteAudioEl = typeof document !== "undefined" ? document.createElement("audio") : null;
-    if (this._remoteAudioEl) {
-      this._remoteAudioEl.autoplay = true;
-      this._remoteAudioEl.srcObject = stream;
-      this._remoteAudioEl.play?.().catch(() => {
-        this._setState({ lastError: "remote_audio_playback_blocked" });
-      });
+    if (!this._remoteAudioEl) {
+      this._logP0Stage("audioElementAttach", "FAIL", { reason: "no_document" });
+      this._setupRemoteAnalyser(stream);
+      return;
+    }
+    this._remoteAudioEl.autoplay = true;
+    this._remoteAudioEl.srcObject = stream;
+    this._logP0Stage("audioElementAttach", "PASS", { isReconnectAttach });
+
+    this._logP0Stage("playCalled", "PASS", { isReconnectAttach }); // stage 8 — the call itself always happens; PASS here means "attempted", not "succeeded"
+    const playPromise = this._remoteAudioEl.play?.();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise
+        .then(() => {
+          const diagnostic = { ok: true, isReconnectAttach, attachCount: this._remoteStreamAttachCount, at: new Date().toISOString() };
+          this._setState({ lastAudioPlaybackAttempt: diagnostic });
+          this._logP0Stage("playResult", "PASS", diagnostic);
+        })
+        .catch((err) => {
+          const diagnostic = {
+            ok: false,
+            errorName: err?.name ?? "unknown",
+            errorMessage: err?.message ?? String(err),
+            isReconnectAttach,
+            attachCount: this._remoteStreamAttachCount,
+            at: new Date().toISOString(),
+          };
+          this._setState({ lastError: "remote_audio_playback_blocked", lastAudioPlaybackAttempt: diagnostic });
+          this._logP0Stage("playResult", "FAIL", diagnostic);
+        });
     }
     this._setupRemoteAnalyser(stream);
   }
@@ -680,6 +872,13 @@ export class NetworkPttClient extends PttClient {
 
   _startRemoteLevelLoop() {
     const usesRaf = typeof requestAnimationFrame === "function";
+    const attachCountAtStart = this._remoteStreamAttachCount; // RC4 P0 — tie this loop's detection to the specific attach it belongs to
+    // RC4 P0 review — sustained-detection window: a single instant peak
+    // (one frame over threshold) isn't good enough evidence, since a
+    // brief spike could be noise/artifact. Require the signal to stay
+    // above threshold continuously for this long before declaring PASS.
+    const SUSTAINED_DETECTION_MS = 150;
+    let aboveThresholdSinceMs = null;
     const tick = () => {
       if (!this._remoteAnalyser) return;
       this._remoteAnalyser.getByteTimeDomainData(this._remoteAnalyserData);
@@ -698,6 +897,49 @@ export class NetworkPttClient extends PttClient {
       // technically "listening" (to silence, between PTT presses).
       const rawLevel = Math.min(1, rms * 4);
       this._setState({ remoteInputLevel: this.state.isReceiving ? rawLevel : 0 });
+
+      // RC4 P0 review — Debug Overlay diagnostics: current + peak values,
+      // tracked regardless of isReceiving so the overlay always shows
+      // what the analyser is actually measuring right now.
+      this._p0MaxRms = Math.max(this._p0MaxRms ?? 0, rms);
+      this._p0MaxRawLevel = Math.max(this._p0MaxRawLevel ?? 0, rawLevel);
+      this._setState({
+        p0LevelDebug: {
+          rms: Number(rms.toFixed(4)),
+          rawLevel: Number(rawLevel.toFixed(4)),
+          threshold: NETWORK_VOICE_DETECTED_THRESHOLD,
+          maxRms: Number(this._p0MaxRms.toFixed(4)),
+          maxRawLevel: Number(this._p0MaxRawLevel.toFixed(4)),
+        },
+      });
+
+      // RC4 P0 review — stage 10, renamed remoteSignalDetected: fixed to
+      // compare the SAME scaled rawLevel that voiceDetected/the UI meter
+      // use (previously compared raw, unscaled rms against a threshold
+      // tuned for the scaled value — meaning a rawLevel that visibly
+      // crossed the meter's own threshold could still fail this stage).
+      // Also now requires SUSTAINED_DETECTION_MS of continuous signal,
+      // not a single instant peak.
+      const isAboveThreshold = this.state.isReceiving && rawLevel > NETWORK_VOICE_DETECTED_THRESHOLD;
+      if (isAboveThreshold) {
+        if (aboveThresholdSinceMs == null) aboveThresholdSinceMs = Date.now();
+        const sustainedMs = Date.now() - aboveThresholdSinceMs;
+        if (
+          sustainedMs >= SUSTAINED_DETECTION_MS &&
+          !this._p0Lifecycle.remoteSignalDetected &&
+          this._remoteStreamAttachCount === attachCountAtStart
+        ) {
+          this._logP0Stage("remoteSignalDetected", "PASS", {
+            rms: rms.toFixed(4),
+            rawLevel: rawLevel.toFixed(4),
+            sustainedMs,
+            attachCount: attachCountAtStart,
+          });
+        }
+      } else {
+        aboveThresholdSinceMs = null;
+      }
+
       this._remoteLevelRaf = usesRaf ? requestAnimationFrame(tick) : setTimeout(tick, 50);
       if (!usesRaf && typeof this._remoteLevelRaf.unref === "function") this._remoteLevelRaf.unref();
     };
@@ -824,11 +1066,35 @@ export class NetworkPttClient extends PttClient {
     this.signaling.sendDistanceShare({ referenceDistanceM, source, holeNumber });
   }
 
-  /** The receiving side calls this once it has consumed
-   * state.receivedDistanceShare (dispatched teamDistanceShare locally) —
-   * prevents re-applying the same share on every subsequent re-render. */
+  /** P0-5 fix — cheer/sound effects broadcast. */
+  shareSoundPlayed({ soundId, category, label, targetUserIds }) {
+    this.signaling.sendSoundPlayed({ soundId, category, label, targetUserIds });
+  }
+
+  /** RC4 P1 fix — actually tells the rest of the room a hole advanced. */
+  shareHoleAdvance({ completedHoleNumber, nextHoleNumber }) {
+    this.signaling.sendHoleAdvance({ completedHoleNumber, nextHoleNumber });
+  }
+
+  /** RC4 P1 defense — rejoin hole-state recovery. */
+  shareHoleSync({ currentHoleNumber, targetUserId }) {
+    this.signaling.sendHoleSync({ currentHoleNumber, targetUserId });
+  }
+
   clearReceivedDistanceShare() {
     this._setState({ receivedDistanceShare: null });
+  }
+
+  clearReceivedSoundPlayed() {
+    this._setState({ receivedSoundPlayed: null });
+  }
+
+  clearReceivedHoleAdvance() {
+    this._setState({ receivedHoleAdvance: null });
+  }
+
+  clearReceivedHoleSync() {
+    this._setState({ receivedHoleSync: null });
   }
 
   release() {

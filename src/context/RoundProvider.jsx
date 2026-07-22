@@ -4,6 +4,8 @@ import * as actions from "../engine/roundActions.js";
 import { loadRound, saveRound } from "../engine/roundStorage.js";
 import { createRoundSeed } from "../data/roundSeed.js";
 import { useIdentity } from "./useIdentity.js";
+import { useCommunication } from "./useCommunication.js";
+import { useRoom } from "./useRoom.js";
 
 export const RoundContext = createContext(null);
 
@@ -13,6 +15,8 @@ function init(userId) {
 
 export default function RoundProvider({ children }) {
   const identity = useIdentity();
+  const communication = useCommunication(); // RC4 P1 fix
+  const { room } = useRoom(); // RC4 P1 defense — rejoin hole-state recovery needs to know who's host
   // Runtime Identity v0.4 §2/§3: `meId` now comes from the runtime
   // identity instead of the hardcoded ME_PLAYER_ID constant.
   // createRoundSeed()'s DEMO fallback is UNCHANGED (still always seeds
@@ -34,6 +38,65 @@ export default function RoundProvider({ children }) {
   useEffect(() => {
     saveRound(round, identity.userId);
   }, [round, identity.userId]);
+
+  // RC4 P1 fix — the receiving side of hole-advance sync. The sender
+  // already applied it locally (completeCurrentHoleAndAdvance above);
+  // this is what makes a TEAMMATE's hole completion actually advance
+  // MY OWN Round Engine too, which never happened before this fix —
+  // every device's hole progression was completely independent.
+  useEffect(() => {
+    const payload = communication.receivedHoleAdvance;
+    if (!payload) return;
+    if (roundRef.current.currentHoleNumber === payload.completedHoleNumber) {
+      dispatch(actions.holeComplete(payload.completedHoleNumber));
+      dispatch(actions.nextHole());
+    }
+    communication.clearReceivedHoleAdvance?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.receivedHoleAdvance]);
+
+  // RC4 P1 defense — rejoin hole-state recovery, host side: watches
+  // lastMemberOnlineEvent (fires on EVERY member_online, including a
+  // reconnecting member whose userId was already known) rather than
+  // communication.members.length, which was confirmed NOT to change on
+  // a reconnect — the member list upserts existing entries instead of
+  // growing, so a pure length-delta trigger silently never fires for
+  // exactly the rejoin case this exists to handle.
+  useEffect(() => {
+    const event = communication.lastMemberOnlineEvent;
+    if (!event) return;
+    const isHost = room?.hostUserId === identity.userId;
+    if (isHost) {
+      communication.shareHoleSync?.({ currentHoleNumber: roundRef.current.currentHoleNumber, targetUserId: event.userId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.lastMemberOnlineEvent]);
+
+  // RC4 P1 defense — rejoin hole-state recovery, guest side: catch up
+  // one hole at a time via the SAME reducer path a normal advance uses
+  // (holeComplete + nextHole), reusing its existing "must be completed
+  // first" guard rather than introducing a new, less-tested jump path.
+  // Bounded loop (18 holes max) so a corrupt/hostile payload can't spin
+  // forever.
+  useEffect(() => {
+    const payload = communication.receivedHoleSync;
+    if (!payload) return;
+    const target = payload.currentHoleNumber;
+    // dispatch() doesn't update roundRef.current synchronously (that only
+    // happens after a re-render, via the separate ref-sync effect above),
+    // so the loop can't re-check the ref between iterations — track the
+    // hop count locally instead, computed once from the current value.
+    let n = roundRef.current.currentHoleNumber;
+    let guard = 0;
+    while (n < target && guard < 18) {
+      dispatch(actions.holeComplete(n));
+      dispatch(actions.nextHole());
+      n += 1;
+      guard += 1;
+    }
+    communication.clearReceivedHoleSync?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.receivedHoleSync]);
 
   const value = useMemo(() => {
     /**
@@ -63,8 +126,15 @@ export default function RoundProvider({ children }) {
      * underlying actions so RoundScreen doesn't need to sequence them. */
     function completeCurrentHoleAndAdvance() {
       const current = roundRef.current;
-      dispatch(actions.holeComplete(current.currentHoleNumber));
+      const completedHoleNumber = current.currentHoleNumber;
+      dispatch(actions.holeComplete(completedHoleNumber));
       dispatch(actions.nextHole());
+      // RC4 P1 fix — this was purely local before; teammates' Round
+      // Engine never advanced, leaving them permanently on the old hole.
+      communication.shareHoleAdvance?.({
+        completedHoleNumber,
+        nextHoleNumber: completedHoleNumber + 1,
+      });
     }
 
     return {

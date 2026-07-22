@@ -27,7 +27,7 @@ export class WebRtcTransport {
    *   onTrackEnded: () => void,
    * }} handlers
    */
-  constructor({ iceServers = [], onIceCandidate, onRemoteTrack, onConnectionStateChange, onTrackEnded }) {
+  constructor({ iceServers = [], onIceCandidate, onRemoteTrack, onConnectionStateChange, onTrackEnded, onIceConnectionStateChange }) {
     this.pc = new RTCPeerConnection({ iceServers });
     this._hasRemoteDescription = false;
     this._pendingCandidates = [];
@@ -48,6 +48,13 @@ export class WebRtcTransport {
     // signal NetworkPttClient's unified cleanup path listens to.
     this.pc.onconnectionstatechange = () => {
       onConnectionStateChange(this.pc.connectionState);
+    };
+    // RC4 P0 — iceConnectionState is a DIFFERENT property than
+    // connectionState (ICE-layer only: checking/connected/failed/etc,
+    // can reach "connected" before the overall PeerConnection does).
+    // Tracked separately per this Sprint's lifecycle stage list.
+    this.pc.oniceconnectionstatechange = () => {
+      onIceConnectionStateChange?.(this.pc.iceConnectionState);
     };
   }
 

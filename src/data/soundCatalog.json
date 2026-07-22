@@ -10,7 +10,11 @@
       "src": "/sounds/gallery/good-shot.mp3",
       "language": "ko-KR",
       "voiceGender": "mixed",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.85,
       "cooldownMs": 3000,
       "rightsStatus": "review_required",
@@ -26,7 +30,11 @@
       "textTemplate": "나이스!",
       "language": "ko-KR",
       "voiceGender": "auto",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.9,
       "cooldownMs": 3000,
       "rightsStatus": "original",
@@ -42,7 +50,11 @@
       "textTemplate": "끼야호!",
       "language": "ko-KR",
       "voiceGender": "mixed",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.9,
       "cooldownMs": 3000,
       "rightsStatus": "original",
@@ -58,7 +70,11 @@
       "src": "/sounds/team/ok-male.mp3",
       "language": "ko-KR",
       "voiceGender": "male",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 2500,
       "rightsStatus": "original",
@@ -74,7 +90,11 @@
       "src": "/sounds/team/ok-female.mp3",
       "language": "ko-KR",
       "voiceGender": "female",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 2500,
       "rightsStatus": "original",
@@ -90,7 +110,11 @@
       "src": "/sounds/team/concede-male.mp3",
       "language": "ko-KR",
       "voiceGender": "male",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 2500,
       "rightsStatus": "original",
@@ -106,7 +130,11 @@
       "src": "/sounds/team/concede-female.mp3",
       "language": "ko-KR",
       "voiceGender": "female",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 2500,
       "rightsStatus": "original",
@@ -122,7 +150,11 @@
       "src": "/sounds/team/mark-please-female.mp3",
       "language": "ko-KR",
       "voiceGender": "female",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 3000,
       "rightsStatus": "original",
@@ -138,7 +170,11 @@
       "src": "/sounds/team/fighting-sample.mp3",
       "language": "ko-KR",
       "voiceGender": "mixed",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 1,
       "cooldownMs": 3000,
       "rightsStatus": "prototype_only",
@@ -154,7 +190,11 @@
       "textTemplate": "버디! 축하합니다!",
       "language": "ko-KR",
       "voiceGender": "auto",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 1,
       "cooldownMs": 3000,
       "rightsStatus": "original",
@@ -170,7 +210,11 @@
       "src": "/sounds/achievement/eagle-sample.mp3",
       "language": "ko-KR",
       "voiceGender": "mixed",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 1,
       "cooldownMs": 3000,
       "rightsStatus": "review_required",
@@ -186,7 +230,11 @@
       "textTemplate": "핀까지 백서른두 미터입니다.",
       "language": "ko-KR",
       "voiceGender": "female",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.8,
       "cooldownMs": 5000,
       "rightsStatus": "original",
@@ -202,7 +250,11 @@
       "textTemplate": "포어!",
       "language": "ko-KR",
       "voiceGender": "male",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 1,
       "cooldownMs": 2000,
       "rightsStatus": "original",
@@ -218,12 +270,36 @@
       "textTemplate": "{name} 아이가~!!",
       "language": "ko-KR",
       "voiceGender": "auto",
-      "targets": ["phone", "headphones", "watch"],
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
       "volume": 0.9,
       "cooldownMs": 4000,
       "rightsStatus": "prototype_only",
       "enabled": true,
       "icon": "megaphone",
+      "tone": "green"
+    },
+    {
+      "id": "test_fieldtalk_chime",
+      "label": "[TEST] FIELDTALK 차임",
+      "category": "team",
+      "sourceType": "file",
+      "src": "/sounds/test/fieldtalk-test-chime.wav",
+      "language": "ko-KR",
+      "voiceGender": "mixed",
+      "targets": [
+        "phone",
+        "headphones",
+        "watch"
+      ],
+      "volume": 0.7,
+      "cooldownMs": 1000,
+      "rightsStatus": "prototype_test",
+      "enabled": true,
+      "icon": "radio",
       "tone": "green"
     }
   ]

@@ -206,43 +206,44 @@ export default function HomeScreen({
           )}
         </div>
 
-        <div className="ft-section">
-          <div className="ft-section-head">
-            <span className="ft-section-title">동반자</span>
-            <span className="ft-section-meta">
-              <Users size={13} /> {companions.length}명 초대 가능
-            </span>
-          </div>
-          <p className="ft-pin-position-hint" style={{ margin: "-4px 0 8px" }}>
-            <strong>Preview Simulation</strong>
-            <br />
-            탭하여 참여 상태를 시뮬레이션합니다.
-            <br />
-            실제 초대 알림은 아직 구현되지 않았습니다.
-          </p>
-          <div className="ft-companions">
-            {companions.map((c) => {
-              const member = room?.members.find((m) => m.userId === c.id);
-              const isJoined = member?.joinStatus === "joined";
-              const isInvited = member?.joinStatus === "invited";
-              const label = isJoined
-                ? "참여함"
-                : isInvited
-                ? "초대됨"
-                : "미초대";
-              return (
-                <button
-                  key={c.id}
-                  className={`ft-companion ${isJoined || isInvited ? "is-invited" : ""}`}
-                  onClick={() => toggleInvite(c)}
-                >
-                  <div className="ft-avatar" style={{ "--avatar-color": c.color }}>
-                    {c.name}
-                    <span className={`ft-dot ${isJoined ? "is-online" : ""}`} />
-                    {isJoined && (
-                      <span className="ft-invited-badge">
-                        <Check size={11} strokeWidth={3} />
-                      </span>
+        {isDevMode && (
+          <div className="ft-section">
+            <div className="ft-section-head">
+              <span className="ft-section-title">동반자 (DEV 시뮬레이션)</span>
+              <span className="ft-section-meta">
+                <Users size={13} /> {companions.length}명 초대 가능
+              </span>
+            </div>
+            <p className="ft-pin-position-hint" style={{ margin: "-4px 0 8px" }}>
+              <strong>Preview Simulation</strong>
+              <br />
+              탭하여 참여 상태를 시뮬레이션합니다.
+              <br />
+              실제 초대 알림은 아직 구현되지 않았습니다.
+            </p>
+            <div className="ft-companions">
+              {companions.map((c) => {
+                const member = room?.members.find((m) => m.userId === c.id);
+                const isJoined = member?.joinStatus === "joined";
+                const isInvited = member?.joinStatus === "invited";
+                const label = isJoined
+                  ? "참여함"
+                  : isInvited
+                  ? "초대됨"
+                  : "미초대";
+                return (
+                  <button
+                    key={c.id}
+                    className={`ft-companion ${isJoined || isInvited ? "is-invited" : ""}`}
+                    onClick={() => toggleInvite(c)}
+                  >
+                    <div className="ft-avatar" style={{ "--avatar-color": c.color }}>
+                      {c.name}
+                      <span className={`ft-dot ${isJoined ? "is-online" : ""}`} />
+                      {isJoined && (
+                        <span className="ft-invited-badge">
+                          <Check size={11} strokeWidth={3} />
+                        </span>
                     )}
                   </div>
                   <span className="ft-companion-label">{label}</span>
@@ -250,7 +251,29 @@ export default function HomeScreen({
               );
             })}
           </div>
-        </div>
+          </div>
+        )}
+
+        {room && room.members.filter((m) => m.userId !== identity.userId).length > 0 && (
+          <div className="ft-section">
+            <div className="ft-section-head">
+              <span className="ft-section-title">참가자</span>
+              <span className="ft-section-meta">
+                <Users size={13} /> {room.members.filter((m) => m.userId !== identity.userId).length}명
+              </span>
+            </div>
+            <div className="ft-companions">
+              {room.members
+                .filter((m) => m.userId !== identity.userId)
+                .map((m) => (
+                  <div className="ft-avatar" key={m.userId} style={{ "--avatar-color": "#5ddba0" }}>
+                    {m.displayName}
+                    <span className={`ft-dot ${m.joinStatus === "joined" ? "is-online" : ""}`} />
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         <div className="ft-section">
           <div className="ft-section-head">
