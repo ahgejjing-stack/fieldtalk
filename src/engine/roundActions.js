@@ -31,6 +31,7 @@ export const PLAYER_SET_LOCATION = "PLAYER_SET_LOCATION";
 export const COURSE_SNAPSHOT_APPLIED = "COURSE_SNAPSHOT_APPLIED";
 export const COURSE_SNAPSHOT_APPLIED_WITH_HOLES = "COURSE_SNAPSHOT_APPLIED_WITH_HOLES";
 export const ROUND_START_FROM_ROOM = "ROUND_START_FROM_ROOM";
+export const ROUND_ENTER_NETWORK_BASELINE = "ROUND_ENTER_NETWORK_BASELINE";
 export const ROUND_RESET = "ROUND_RESET";
 
 export const roundStart = () => ({ type: ROUND_START });
@@ -218,6 +219,16 @@ export const courseSnapshotAppliedWithHoles = (courseSnapshot, startHoleNumber) 
 export const roundStartFromRoom = (preBuiltRound) => ({
   type: ROUND_START_FROM_ROOM,
   payload: { preBuiltRound },
+});
+
+/** RC4 CRITICAL REGRESSION FIX — swap the Round Engine over to a clean,
+ * demo-free network baseline the instant network mode engages, so the
+ * demo seed (round_demo_001 / 재식·재근·광천·해란) can never render in a
+ * network session even for a single frame before round_started lands.
+ * Idempotent in the reducer: a no-op once a real network round is active. */
+export const roundEnterNetworkBaseline = (baseline) => ({
+  type: ROUND_ENTER_NETWORK_BASELINE,
+  payload: { baseline },
 });
 
 /** TASK-010 Review §3: fires when leaving a COMPLETED round via the

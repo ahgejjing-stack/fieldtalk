@@ -24,6 +24,7 @@ import {
   COURSE_SNAPSHOT_APPLIED,
   COURSE_SNAPSHOT_APPLIED_WITH_HOLES,
   ROUND_START_FROM_ROOM,
+  ROUND_ENTER_NETWORK_BASELINE,
 } from "./roundActions.js";
 import { calculateTeamDistances, canApplyPositionCorrection } from "./distanceCalculator.js";
 import { selectPlayerGps } from "./roundSelectors.js";
@@ -670,6 +671,34 @@ export function roundReducer(state, action) {
       const { preBuiltRound } = action.payload;
       if (!preBuiltRound) return state;
       return preBuiltRound;
+    }
+
+    case ROUND_ENTER_NETWORK_BASELINE: {
+      // RC4 CRITICAL REGRESSION FIX — replace whatever is loaded (the demo
+      // seed on first launch, or a stale prior baseline) with a clean,
+      // demo-free network baseline, so a network session NEVER renders
+      // round_demo_001's players. Wholesale replace, same as
+      // ROUND_START_FROM_ROOM.
+      //
+      // Guard: if a REAL network round is already active (a `round_<ts>`
+      // id, produced only by buildInitialRoundFromRoom), do NOT clobber it
+      // — that would wipe live players/scores. We only overwrite the demo
+      // seed or an earlier pending baseline.
+      const { baseline } = action.payload;
+      if (!baseline) return state;
+      // A live network round has a `round_<ts>` id AND is active — but the
+      // DEMO SEED also literally starts with "round_" (round_demo_001) and
+      // is active, so it must be excluded explicitly, otherwise the guard
+      // would refuse to clear the very demo state this action exists to
+      // remove (the RC4 regression).
+      const isDemoSeed = state.id === "round_demo_001";
+      const isLiveNetworkRound =
+        !isDemoSeed &&
+        typeof state.id === "string" &&
+        state.id.startsWith("round_") &&
+        state.status === "active";
+      if (isLiveNetworkRound) return state;
+      return baseline;
     }
 
     default:

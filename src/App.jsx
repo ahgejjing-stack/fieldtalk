@@ -215,6 +215,25 @@ function AppShell() {
     if (!startingAsHost && round.status !== "active") {
       dispatch(actions.roundStart());
     }
+    if (startingAsHost && networkCommunicationEnabled) {
+      // RC4 diagnostics — host side. The round object is server-authoritative
+      // in the sense that the host built it and broadcast the identical
+      // payload; every client (host included) ends on the same roundId.
+      // eslint-disable-next-line no-console
+      console.log("[ROUND MODE]", "mode=network");
+      // eslint-disable-next-line no-console
+      console.log(
+        "[ROUND STARTED]",
+        `roomId=${room?.code ?? "?"}`,
+        `roundId=${startedRound.id}`,
+        `hostUserId=${room?.hostUserId ?? identity.userId}`,
+        `memberIds=[${(startedRound.players ?? []).map((p) => p.id).join(",")}]`
+      );
+      // eslint-disable-next-line no-console
+      console.log("[ROUND HYDRATE SOURCE]", "source=server_snapshot");
+      // eslint-disable-next-line no-console
+      console.log("[DEMO STATE GUARD]", "demoEffectsEnabled=false");
+    }
     setScreen("round");
   };
 
@@ -370,6 +389,21 @@ function AppShell() {
       localDisplayName: identity.displayName,
     });
     if (result.ok) {
+      // RC4 diagnostics — Founder device test observability.
+      // eslint-disable-next-line no-console
+      console.log("[ROUND MODE]", "mode=network");
+      // eslint-disable-next-line no-console
+      console.log(
+        "[ROUND STARTED]",
+        `roomId=${payload.roomId}`,
+        `roundId=${result.round.id}`,
+        `hostUserId=${communication.hostUserId ?? room?.hostUserId ?? "?"}`,
+        `memberIds=[${result.round.players.map((p) => p.id).join(",")}]`
+      );
+      // eslint-disable-next-line no-console
+      console.log("[ROUND HYDRATE SOURCE]", "source=server_snapshot");
+      // eslint-disable-next-line no-console
+      console.log("[DEMO STATE GUARD]", "demoEffectsEnabled=false");
       dispatch(actions.roundStartFromRoom(result.round));
       setScreen("round");
       showToast("Host가 라운드를 시작했습니다");

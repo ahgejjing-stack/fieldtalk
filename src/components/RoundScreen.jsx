@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Mic, PartyPopper, Share2, X } from "lucide-r
 import { useRound } from "../context/useRound.js";
 import { useNowTick } from "../hooks/useNowTick.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
+import { RUNTIME_MODES } from "../config/runtimeMode.js";
 import { useCommunication } from "../context/useCommunication.js";
 import { clearActiveRoomRef } from "../room/activeRoomRef.js";
 import { formatParRelative } from "../utils/scoreFormat.js";
@@ -196,9 +197,31 @@ export default function RoundScreen({ onBack, onToast }) {
   /* Demo: simulate an incoming transmission from a companion via the Round
    * Engine itself (still respects the "only one speaker" guard — if the
    * user happens to be transmitting at the same moment, this is correctly
-   * rejected by startPtt just like a real second speaker would be). */
+   * rejected by startPtt just like a real second speaker would be).
+   *
+   * RC4 CRITICAL REGRESSION FIX — this scripted demo transmission ("해란이
+   * 말하는 중") must NEVER run in a real network round. Two hard guards:
+   *   (1) networkCommunicationEnabled must be false, and
+   *   (2) runtimeMode must be the demo mode.
+   * Both are checked INSIDE the effect body (not just as a render
+   * condition) and the effect is a genuine no-op otherwise — a UI
+   * rendering condition alone was insufficient (that was the RC4 bug: the
+   * timer fired regardless of mode and injected player_haeran into the
+   * round). It also never references a hardcoded demo id unless the demo
+   * seed is actually the active round, so it can't inject a phantom
+   * player into any Room-started round even if a mode flag were wrong. */
   const demoRanRef = useRef(false);
   useEffect(() => {
+    // Guard 1 — never in a live network room.
+    if (networkCommunicationEnabled) return;
+    // Guard 2 — only in explicit demo runtime mode.
+    if (runtimeMode !== RUNTIME_MODES.DEMO) return;
+    // Guard 3 — only when the actual demo seed round is loaded, and only
+    // when its scripted speaker (player_haeran) is a real member of it.
+    // This makes the effect structurally incapable of injecting a demo id
+    // into any non-seed round.
+    if (round.id !== "round_demo_001") return;
+    if (!round.players.some((p) => p.id === "player_haeran")) return;
     if (demoRanRef.current) return;
     demoRanRef.current = true;
     const t1 = setTimeout(() => {
@@ -210,7 +233,7 @@ export default function RoundScreen({ onBack, onToast }) {
     }, 3200);
     return () => clearTimeout(t1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [networkCommunicationEnabled, runtimeMode, round.id]);
 
   const handleCompleteHole = () => {
     // Score Input UX 최종 정리: if I opened the score panel this hole (a
@@ -231,6 +254,36 @@ export default function RoundScreen({ onBack, onToast }) {
       onToast(`${holeNumber + 1}번 홀로 이동했습니다`);
     }
   };
+
+  // RC4 CRITICAL REGRESSION FIX — an un-hydrated network round (clean
+  // baseline, no server snapshot applied yet) must show a neutral loading
+  // state, NEVER demo players. `pending`/isNetworkBaseline with no real
+  // players is exactly that window. An empty/loading network state is
+  // acceptable per Founder's rules; demo fallback is not.
+  const isPendingNetworkRound =
+    networkCommunicationEnabled &&
+    (round.status === "pending" || round.isNetworkBaseline === true) &&
+    players.length === 0;
+
+  if (isPendingNetworkRound) {
+    // eslint-disable-next-line no-console
+    console.log("[ROUND HYDRATE SOURCE]", "source=server_snapshot (pending)");
+    return (
+      <div className="ft-screen ft-round">
+        <div className="ft-round-scroll">
+          <div className="ft-compact-header">
+            <button className="ft-icon-btn" onClick={onBack} aria-label="뒤로">
+              <ChevronLeft size={18} strokeWidth={2.2} />
+            </button>
+            <div className="ft-compact-header-text">
+              <div className="ft-compact-course">라운드 준비 중</div>
+              <div className="ft-compact-hole">Host가 라운드를 시작하면 참가자가 표시됩니다</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="ft-screen ft-round">

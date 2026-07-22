@@ -275,3 +275,75 @@ export function createRoundSeed() {
 }
 
 export const ME_PLAYER_ID = "player_jaesik";
+
+/**
+ * createNetworkRoundState — RC4 CRITICAL REGRESSION FIX.
+ * ------------------------------------------------------------------
+ * A structurally-separate, DEMO-FREE baseline for network rounds. This
+ * must NEVER be built by spreading/copying createRoundSeed() — a network
+ * round begins from an empty network baseline and derives its players
+ * ONLY from the live server roster (passed in as `players`, already
+ * adapted via createRoundPlayersFromRoom in networkMode). No demo
+ * players, no mock GPS, no seeded events/scores/distance/speaking.
+ *
+ * Used in two places:
+ *   1. RoundProvider init, when networkCommunicationEnabled is on and no
+ *      real round has been hydrated yet — so the very first render of a
+ *      network session shows a clean/empty round, never the demo seed.
+ *   2. As the shape reference for buildInitialRoundFromRoom's output
+ *      (both produce the same clean network schema).
+ *
+ * @param {object} params
+ * @param {string|null} [params.roomId]
+ * @param {string|null} [params.roundId]  — server-authoritative when known
+ * @param {string|null} [params.hostUserId]
+ * @param {Array}       [params.players]  — already-adapted network players (may be empty)
+ * @param {object|null} [params.course]
+ * @param {number}      [params.startHole]
+ * @param {string}      [params.status]   — "pending" until a real round_started lands
+ */
+export function createNetworkRoundState({
+  roomId = null,
+  roundId = null,
+  hostUserId = null,
+  players = [],
+  course = null,
+  startHole = 1,
+  status = "pending",
+} = {}) {
+  const holeCount = course?.totalHoles ?? 18;
+  const holes = [];
+  for (let n = 1; n <= holeCount; n += 1) {
+    holes.push(
+      n === startHole ? { ...buildPendingHole(n), status: "playing", startedAt: NOW_ISO() } : buildPendingHole(n)
+    );
+  }
+  return {
+    schemaVersion: 1,
+    // A network baseline is deliberately NOT `round_demo_001`. Until a real
+    // round_started arrives it carries a `net_pending_` id so nothing in
+    // the app mistakes it for either the demo seed or a live round.
+    id: roundId ?? `net_pending_${Date.now()}`,
+    // "pending" (not "active") so no hole/score/PTT logic treats an
+    // un-hydrated network baseline as a running round.
+    status,
+    roomId,
+    hostUserId,
+    course: course ?? { id: null, name: null, totalHoles: holeCount },
+    currentHoleNumber: startHole,
+    startedAt: null,
+    completedAt: null,
+    settings: {
+      unit: "meter",
+      soundMode: "fun",
+      outputTargets: ["phone", "headphones", "watch"],
+    },
+    holes,
+    players, // ONLY the live roster — empty is valid (loading), demo is not
+    events: [],
+    shots: [],
+    lastDistanceShare: null,
+    // Explicit marker: demo effects must key off this being false.
+    isNetworkBaseline: true,
+  };
+}

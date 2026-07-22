@@ -2,10 +2,11 @@ import React, { createContext, useEffect, useMemo, useReducer, useRef } from "re
 import { roundReducer } from "../engine/roundReducer.js";
 import * as actions from "../engine/roundActions.js";
 import { loadRound, saveRound } from "../engine/roundStorage.js";
-import { createRoundSeed } from "../data/roundSeed.js";
+import { createRoundSeed, createNetworkRoundState } from "../data/roundSeed.js";
 import { useIdentity } from "./useIdentity.js";
 import { useCommunication } from "./useCommunication.js";
 import { useRoom } from "./useRoom.js";
+import { useRuntimeMode } from "./RuntimeModeContext.jsx";
 
 export const RoundContext = createContext(null);
 
@@ -17,6 +18,7 @@ export default function RoundProvider({ children }) {
   const identity = useIdentity();
   const communication = useCommunication(); // RC4 P1 fix
   const { room } = useRoom(); // RC4 P1 defense — rejoin hole-state recovery needs to know who's host
+  const { networkCommunicationEnabled } = useRuntimeMode(); // RC4 regression fix — demo/network isolation
   // Runtime Identity v0.4 §2/§3: `meId` now comes from the runtime
   // identity instead of the hardcoded ME_PLAYER_ID constant.
   // createRoundSeed()'s DEMO fallback is UNCHANGED (still always seeds
@@ -38,6 +40,35 @@ export default function RoundProvider({ children }) {
   useEffect(() => {
     saveRound(round, identity.userId);
   }, [round, identity.userId]);
+
+  // RC4 CRITICAL REGRESSION FIX — the instant network mode engages, if the
+  // Round Engine is still holding the demo seed (or any non-network state),
+  // swap it for a clean, demo-free network baseline. This closes the exact
+  // gap Founder testing hit: RoundProvider.init() always seeds
+  // createRoundSeed() (재식·재근·광천·해란), and pressing Round Start
+  // navigated to RoundScreen while that demo round was still the active
+  // state — so both phones rendered demo players (and the demo speaking
+  // timer fired). A render-only condition can't fix this; the demo data
+  // must be removed from the actual Round state. The reducer guards against
+  // clobbering a real live network round (`round_<ts>` + active), so this
+  // never wipes a round that round_started already hydrated.
+  useEffect(() => {
+    if (!networkCommunicationEnabled) return;
+    const onDemoSeed = round.id === "round_demo_001";
+    const onLiveNetworkRound = typeof round.id === "string" && round.id.startsWith("round_") && round.status === "active";
+    if (onDemoSeed || (!onLiveNetworkRound && !round.isNetworkBaseline)) {
+      dispatch(
+        actions.roundEnterNetworkBaseline(
+          createNetworkRoundState({
+            roomId: room?.code ?? null,
+            hostUserId: room?.hostUserId ?? null,
+            players: [], // roster arrives via round_started; empty is valid (loading)
+          })
+        )
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [networkCommunicationEnabled, round.id]);
 
   // RC4 P1 fix — the receiving side of hole-advance sync. The sender
   // already applied it locally (completeCurrentHoleAndAdvance above);
