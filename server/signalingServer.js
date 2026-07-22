@@ -218,6 +218,8 @@ export function createSignalingServer({
           // validated server-side against THIS SOCKET's bound identity,
           // never the client's claimed senderUserId.
           const { roomId, roundId, courseSnapshot, startHole, startedAt, players } = msg;
+          // RC4 diagnostic — Stage 2a: did the request reach the server?
+          log("[SERVER] received round_start_request", { roomId, senderUserId: boundUserId, roundId, isHost: boundUserId ? registry.isHost(roomId, boundUserId) : false });
           if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
           if (!registry.isHost(roomId, boundUserId)) {
             registry.sendTo(roomId, boundUserId, {
@@ -236,13 +238,48 @@ export function createSignalingServer({
               roomId,
               reason: "invalid_payload",
             });
+            log("[SERVER] round_start_denied invalid_payload", { roomId, hasRoundId: !!roundId, hasCourse: !!courseSnapshot, playerCount: Array.isArray(players) ? players.length : "not-array" });
             return;
           }
-          // Only players who are actual current room members are trusted
-          // — a host can't claim a non-member is playing.
-          const validPlayers = players.filter((p) => registry.isMember(roomId, p.id));
-          const payload = { type: "round_started", roomId, roundId, courseSnapshot, startHole, startedAt, players: validPlayers };
-          log("round_started", { roomId, roundId, hostUserId: boundUserId, playerCount: validPlayers.length });
+          // RC4 FIX (Founder-recommended) — do NOT trust the client-provided
+          // players array as the roster. Build the round_started roster from
+          // the SERVER-AUTHORITATIVE registry members. We still consult the
+          // host's payload only to carry over display names when present
+          // (falling back to the registry's own displayName), so a stale or
+          // manipulated client roster can neither add phantom players nor
+          // drop real ones.
+          const registryMembers = registry.getMembers(roomId) ?? [];
+          const registryMemberIds = registryMembers.map((m) => m.userId);
+          const requestedPlayerIds = players.map((p) => p.id);
+          const requestedById = new Map(players.map((p) => [p.id, p]));
+          const authoritativePlayers = registryMembers.map((m) => ({
+            id: m.userId,
+            name: requestedById.get(m.userId)?.name ?? m.displayName ?? m.userId,
+          }));
+          const validPlayerIds = authoritativePlayers.map((p) => p.id);
+          // RC4 diagnostic — [SERVER FILTER]: requested vs registry vs final
+          // authoritative roster. A gap between requested and registry (e.g.
+          // host built the round before the guest's membership registered)
+          // is now harmless — the server roster is used regardless.
+          log("[SERVER FILTER]", { roomId, requestedPlayerIds, registryMemberIds, validPlayerIds });
+
+          // RC4 FIX (Founder-requested) — never broadcast an empty roster.
+          // If the registry somehow has no members, deny explicitly rather
+          // than broadcasting a round that would strand every client on the
+          // pending/loading gate.
+          if (authoritativePlayers.length === 0) {
+            registry.sendTo(roomId, boundUserId, {
+              type: "round_start_denied",
+              roomId,
+              reason: "invalid_roster",
+            });
+            log("[SERVER] round_start_denied invalid_roster", { roomId, requestedPlayerIds, registryMemberIds });
+            return;
+          }
+
+          const payload = { type: "round_started", roomId, roundId, courseSnapshot, startHole, startedAt, players: authoritativePlayers };
+          // RC4 diagnostic — Stage 2b: broadcasting to all members (incl host).
+          log("[SERVER] broadcast round_started", { roomId, roundId, hostUserId: boundUserId, playerCount: authoritativePlayers.length, recipients: registryMemberIds });
           registry.broadcast(roomId, payload); // includes the host too, for a single symmetric code path
           break;
         }

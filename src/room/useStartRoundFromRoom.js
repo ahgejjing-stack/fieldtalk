@@ -39,6 +39,20 @@ export function useStartRoundFromRoom() {
       return { ok: false, reason: "room_not_created" };
     }
 
+    // RC4 diagnostic — [HOST BEFORE BUILD]: the exact inputs the host round
+    // is built from. If room.members is missing the guest (roster not yet
+    // mirrored), the built round will only contain the host — visible here.
+    // eslint-disable-next-line no-console
+    console.log(
+      "[HOST BEFORE BUILD]",
+      `identity.userId=${identity.userId}`,
+      `room.hostUserId=${room.hostUserId}`,
+      `networkCommunicationEnabled=${!!networkCommunicationEnabled}`,
+      `members=${JSON.stringify(
+        (room.members ?? []).map((m) => ({ userId: m.userId, name: m.displayName, joinStatus: m.joinStatus }))
+      )}`
+    );
+
     const result = buildInitialRoundFromRoom({
       roomMembers: room.members,
       courseSnapshot,
@@ -48,8 +62,19 @@ export function useStartRoundFromRoom() {
       localDisplayName: identity.displayName,
     });
     if (!result.ok) {
+      // eslint-disable-next-line no-console
+      console.error("[HOST BUILT ROUND] FAILED", `reason=${result.reason}`);
       return result;
     }
+
+    // RC4 diagnostic — [HOST BUILT ROUND]: what actually got built.
+    // eslint-disable-next-line no-console
+    console.log(
+      "[HOST BUILT ROUND]",
+      `roundId=${result.round.id}`,
+      `status=${result.round.status}`,
+      `players=${JSON.stringify(result.round.players.map((p) => ({ id: p.id, name: p.name })))}`
+    );
 
     roundDispatch(roundActions.roundStartFromRoom(result.round));
     roomDispatch(roomActions.roomMarkInRound());

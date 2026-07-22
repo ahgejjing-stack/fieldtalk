@@ -35,7 +35,7 @@ export default function HomeScreen({
 }) {
   const { room, dispatch, actions } = useRoom();
   const identity = useIdentity();
-  const { setNetworkCommunicationEnabled, setRejoinRequested } = useRuntimeMode();
+  const { setNetworkCommunicationEnabled, setRejoinRequested, networkCommunicationEnabled } = useRuntimeMode();
   const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
 
   // RC4 Session Recovery — the minimal active-room reference that survives
@@ -57,6 +57,22 @@ export default function HomeScreen({
     setRejoinRequested?.(true);
     setNetworkCommunicationEnabled(true);
     setRoomOverlayOpen(true);
+  };
+
+  // RC4 CRITICAL — the home "라운드 시작" button.
+  // In LOCAL/demo mode it starts the demo round directly (onStartRound()).
+  // In NETWORK mode with a real room, a bare onStartRound() would only
+  // flip the clean network BASELINE to status=active WITHOUT any players,
+  // leaving RoundScreen stuck on the "라운드 준비 중" loading gate (the
+  // single-device stall). The real network round is built by RoomOverlay's
+  // ROUND START (it owns course selection + buildInitialRoundFromRoom), so
+  // in network mode we open that overlay instead of the broken bare start.
+  const handleHomeStartRound = () => {
+    if (networkCommunicationEnabled && room) {
+      setRoomOverlayOpen(true);
+      return;
+    }
+    onStartRound();
   };
 
   // [이 방 나가기] from the recovery card — the user explicitly abandons
@@ -301,7 +317,7 @@ export default function HomeScreen({
           </div>
           <div className="ft-cta-course">레이크사이드 컨트리클럽</div>
           <div className="ft-cta-sub">후반 코스 · 1번 홀 티오프</div>
-          <button className="ft-primary-btn" onClick={onStartRound}>
+          <button className="ft-primary-btn" onClick={handleHomeStartRound}>
             <Radio size={18} strokeWidth={2.2} />
             라운드 시작
           </button>
@@ -432,7 +448,7 @@ export default function HomeScreen({
           </div>
           <span>홈</span>
         </div>
-        <button className="ft-tab" onClick={onStartRound}>
+        <button className="ft-tab" onClick={handleHomeStartRound}>
           <div className="ft-tab-icon">
             <Radio size={18} strokeWidth={2} />
           </div>

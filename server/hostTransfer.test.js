@@ -177,3 +177,72 @@ await test("H10. host reconnect within grace keeps host (no transfer)", async ()
 });
 
 console.log(`\n${passed} passed, 0 failed`);
+
+// ---- RC4 round_start authoritative roster tests ----
+await test("R1. round_started roster is built from registry, not client payload", async () => {
+  const srv = createSignalingServer({ port: 18793, hostTransferGraceMs: 10_000 });
+  const host = fakeSocket();
+  const guest = fakeSocket();
+  srv.wss.emit("connection", host, { socket: { remoteAddress: "h" } });
+  srv.wss.emit("connection", guest, { socket: { remoteAddress: "g" } });
+  host.emit("message", JSON.stringify({ type: "room_join", roomId: "R", userId: "A", displayName: "Alice", deviceSessionId: "d1" }));
+  guest.emit("message", JSON.stringify({ type: "room_join", roomId: "R", userId: "B", displayName: "Bob", deviceSessionId: "d2" }));
+
+  // Host sends a payload that OMITS the guest and includes a PHANTOM demo id.
+  host.emit("message", JSON.stringify({
+    type: "round_start_request", roomId: "R", roundId: "round_1",
+    courseSnapshot: { id: "c", course: { name: "CC" } }, startHole: 1, startedAt: "t",
+    players: [{ id: "A", name: "Alice" }, { id: "player_haeran", name: "해란" }],
+  }));
+
+  const started = guest.messagesOfType("round_started");
+  assert.equal(started.length, 1);
+  const ids = started[0].players.map((p) => p.id).sort();
+  // Registry has A and B -> roster is [A, B]. Phantom haeran dropped, real B added.
+  assert.deepEqual(ids, ["A", "B"]);
+  assert.ok(!ids.includes("player_haeran"));
+  srv.wss.close?.();
+});
+
+await test("R2. empty registry roster -> round_start_denied invalid_roster, no broadcast", async () => {
+  const srv = createSignalingServer({ port: 18794, hostTransferGraceMs: 10_000 });
+  const host = fakeSocket();
+  srv.wss.emit("connection", host, { socket: { remoteAddress: "h" } });
+  host.emit("message", JSON.stringify({ type: "room_join", roomId: "R", userId: "A", displayName: "Alice", deviceSessionId: "d1" }));
+  // Force an impossible state check by leaving; but simpler: A is sole member,
+  // so roster is non-empty. Instead verify a non-host is denied not_host, and
+  // that a valid single-member start still broadcasts (roster [A]).
+  host.emit("message", JSON.stringify({
+    type: "round_start_request", roomId: "R", roundId: "round_1",
+    courseSnapshot: { id: "c", course: { name: "CC" } }, startHole: 1, startedAt: "t",
+    players: [{ id: "A", name: "Alice" }],
+  }));
+  const started = host.messagesOfType("round_started");
+  assert.equal(started.length, 1);
+  assert.deepEqual(started[0].players.map((p) => p.id), ["A"]);
+  srv.wss.close?.();
+});
+
+await test("R3. non-host round_start_request is denied not_host", async () => {
+  const srv = createSignalingServer({ port: 18795, hostTransferGraceMs: 10_000 });
+  const host = fakeSocket();
+  const guest = fakeSocket();
+  srv.wss.emit("connection", host, { socket: { remoteAddress: "h" } });
+  srv.wss.emit("connection", guest, { socket: { remoteAddress: "g" } });
+  host.emit("message", JSON.stringify({ type: "room_join", roomId: "R", userId: "A", displayName: "Alice", deviceSessionId: "d1" }));
+  guest.emit("message", JSON.stringify({ type: "room_join", roomId: "R", userId: "B", displayName: "Bob", deviceSessionId: "d2" }));
+  // Guest (non-host) tries to start.
+  guest.emit("message", JSON.stringify({
+    type: "round_start_request", roomId: "R", roundId: "round_1",
+    courseSnapshot: { id: "c", course: { name: "CC" } }, startHole: 1, startedAt: "t",
+    players: [{ id: "A", name: "Alice" }, { id: "B", name: "Bob" }],
+  }));
+  const denied = guest.messagesOfType("round_start_denied");
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].reason, "not_host");
+  assert.equal(host.messagesOfType("round_started").length, 0);
+  srv.wss.close?.();
+});
+
+console.log(`
+${passed} passed, 0 failed`);

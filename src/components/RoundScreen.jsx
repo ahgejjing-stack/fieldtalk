@@ -23,6 +23,7 @@ import PTTButton from "./PTTButton.jsx";
 import DistanceCard from "./DistanceCard.jsx";
 import GalleryPanel from "./GalleryPanel.jsx";
 import ScoreCard from "./ScoreCard.jsx";
+import PoDiagnosticPanel from "./PoDiagnosticPanel.jsx"; // RC4 TEMPORARY — remove after device verification
 
 // 8-point compass — "Compact First": a single arrow + 2-letter label is
 // enough context for a golfer glancing at the header, no need to spell out
@@ -265,11 +266,31 @@ export default function RoundScreen({ onBack, onToast }) {
     (round.status === "pending" || round.isNetworkBaseline === true) &&
     players.length === 0;
 
+  // RC4 diagnostic — [ROUND SCREEN STATE]: the exact values that decide the
+  // loading gate, logged on every render so a device test shows precisely
+  // why RoundScreen is (or isn't) showing "라운드 준비 중".
+  // eslint-disable-next-line no-console
+  console.log(
+    "[ROUND SCREEN STATE]",
+    `roundId=${round.id}`,
+    `status=${round.status}`,
+    `isNetworkBaseline=${round.isNetworkBaseline === true}`,
+    `players.length=${players.length}`,
+    `networkCommunicationEnabled=${networkCommunicationEnabled}`,
+    `loadingGate=${isPendingNetworkRound}`
+  );
+
   if (isPendingNetworkRound) {
     // eslint-disable-next-line no-console
     console.log("[ROUND HYDRATE SOURCE]", "source=server_snapshot (pending)");
     return (
       <div className="ft-screen ft-round">
+        <PoDiagnosticPanel
+          round={round}
+          players={players}
+          loadingGate={true}
+          networkCommunicationEnabled={networkCommunicationEnabled}
+        />
         <div className="ft-round-scroll">
           <div className="ft-compact-header">
             <button className="ft-icon-btn" onClick={onBack} aria-label="뒤로">
@@ -287,6 +308,12 @@ export default function RoundScreen({ onBack, onToast }) {
 
   return (
     <div className="ft-screen ft-round">
+      <PoDiagnosticPanel
+        round={round}
+        players={players}
+        loadingGate={false}
+        networkCommunicationEnabled={networkCommunicationEnabled}
+      />
       {displaySpeakerName && (
         <div className="ft-live-badge">
           <span className="ft-live-badge-dot" />

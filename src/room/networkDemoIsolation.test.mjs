@@ -200,3 +200,165 @@ await test("E. rejoin round_started replaces any prior state with real roster on
 });
 
 console.log(`\n${passed} passed, 0 failed`);
+
+// ---- RC4 stall regression — round_started must produce a navigable active round ----
+await test("F. host echo: amIAlreadyPlaying true when local roundId == payload roundId", () => {
+  const hostMembers = [
+    { userId: "host_a", displayName: "A", joinStatus: "joined", role: "host", connectionStatus: "online" },
+    { userId: "guest_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+  ];
+  const hostRound = buildInitialRoundFromRoom({
+    roomMembers: hostMembers, courseSnapshot: course, startHoleNumber: 1,
+    networkMode: true, localUserId: "host_a", localDisplayName: "A",
+  }).round;
+  // host broadcasts roundId = hostRound.id; server echoes it back.
+  const payloadRoundId = hostRound.id;
+  const amIAlreadyPlaying = hostRound.id === payloadRoundId;
+  assert.equal(amIAlreadyPlaying, true, "host must skip rebuild on its own echo");
+  assert.equal(hostRound.status, "active");
+  assert.ok(hostRound.players.length === 2);
+});
+
+await test("G. guest hydrates SAME roundId as host (no id divergence)", () => {
+  const hostMembers = [
+    { userId: "host_a", displayName: "A", joinStatus: "joined", role: "host", connectionStatus: "online" },
+    { userId: "guest_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+  ];
+  const hostRound = buildInitialRoundFromRoom({
+    roomMembers: hostMembers, courseSnapshot: course, startHoleNumber: 1,
+    networkMode: true, localUserId: "host_a", localDisplayName: "A",
+  }).round;
+  // Server payload carries hostRound.id; guest adopts it via roundId param.
+  const guestRound = buildInitialRoundFromRoom({
+    roomMembers: [
+      { userId: "host_a", displayName: "A", joinStatus: "joined", role: "member", connectionStatus: "online" },
+      { userId: "guest_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+    ],
+    courseSnapshot: course, startHoleNumber: 1,
+    networkMode: true, localUserId: "guest_b", localDisplayName: "B",
+    roundId: hostRound.id, // RC4 fix — adopt server roundId
+  }).round;
+  assert.equal(guestRound.id, hostRound.id, "both phones must share one roundId");
+  assert.equal(guestRound.status, "active");
+  // Neither is pending -> RoundScreen won't show the loading gate.
+  const guestPending = (guestRound.status === "pending" || guestRound.isNetworkBaseline === true) && guestRound.players.length === 0;
+  assert.equal(guestPending, false, "guest must NOT be stuck on loading gate");
+});
+
+await test("H. baseline effect never clobbers a round that has players", () => {
+  const live = buildInitialRoundFromRoom({
+    roomMembers: [
+      { userId: "host_a", displayName: "A", joinStatus: "joined", role: "host", connectionStatus: "online" },
+      { userId: "guest_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+    ],
+    courseSnapshot: course, startHoleNumber: 1,
+    networkMode: true, localUserId: "host_a", localDisplayName: "A",
+  }).round;
+  // Replicate the hardened effect condition.
+  const onDemoSeed = live.id === "round_demo_001";
+  const hasRealPlayers = Array.isArray(live.players) && live.players.length > 0;
+  const onLiveNetworkRound = typeof live.id === "string" && live.id.startsWith("round_") && !onDemoSeed && live.status === "active";
+  const wouldSkip = onLiveNetworkRound || hasRealPlayers;
+  assert.equal(wouldSkip, true, "effect must skip (never clobber) a round with players");
+});
+
+
+// ---- RC4 baseline decision ordering (Founder-caught bug) ----
+import { decideNetworkBaseline } from "./decideNetworkBaseline.js";
+
+await test("I. demo seed WITH 4 players -> baseline (ordering: seed removal wins over hasRealPlayers)", () => {
+  const demo = createRoundSeed(); // id round_demo_001, status active, 4 players
+  assert.equal(demo.players.length, 4);
+  const decision = decideNetworkBaseline({ networkCommunicationEnabled: true, round: demo });
+  assert.equal(decision, "baseline", "demo seed must be removed even though it has players");
+});
+
+await test("I2. live network round with players -> none (never clobbered)", () => {
+  const live = buildInitialRoundFromRoom({
+    roomMembers: [
+      { userId: "u_a", displayName: "A", joinStatus: "joined", role: "host", connectionStatus: "online" },
+      { userId: "u_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+    ],
+    courseSnapshot: course, startHoleNumber: 1, networkMode: true, localUserId: "u_a", localDisplayName: "A",
+  }).round;
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round: live }), "none");
+});
+
+await test("I3. clean pending baseline -> none (idempotent)", () => {
+  const baseline = createNetworkRoundState({ roomId: "R", players: [] });
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round: baseline }), "none");
+});
+
+await test("I4. network off -> none regardless of state", () => {
+  const demo = createRoundSeed();
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: false, round: demo }), "none");
+});
+
+await test("I5. non-seed empty non-network state -> baseline (establish)", () => {
+  const weird = { id: "local_x", status: "active", players: [], isNetworkBaseline: false };
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round: weird }), "baseline");
+});
+
+await test("I6. full sequence: demo seed -> baseline -> live round, no re-clobber", () => {
+  // 1. demo seed + network on -> baseline
+  let round = createRoundSeed();
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round }), "baseline");
+  // 2. apply baseline
+  round = roundReducer(round, actions.roundEnterNetworkBaseline(createNetworkRoundState({ roomId: "R", players: [] })));
+  assert.equal(round.players.length, 0);
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round }), "none"); // idempotent
+  // 3. round_started hydrates a live round
+  const res = buildInitialRoundFromRoom({
+    roomMembers: [
+      { userId: "u_a", displayName: "A", joinStatus: "joined", role: "host", connectionStatus: "online" },
+      { userId: "u_b", displayName: "B", joinStatus: "joined", role: "member", connectionStatus: "online" },
+    ],
+    courseSnapshot: course, startHoleNumber: 1, networkMode: true, localUserId: "u_a", localDisplayName: "A",
+    roundId: "round_SERVER_1",
+  });
+  round = roundReducer(round, actions.roundStartFromRoom(res.round));
+  assert.equal(round.players.length, 2);
+  // 4. baseline effect re-runs on round.id change -> must NOT clobber
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round }), "none");
+});
+
+
+// ---- RC4 single-device stall (Founder acceptance test #1) ----
+await test("J. single-device: baseline -> ROUND START builds self, loading gate clears", () => {
+  // Host created a room; only self is a joined member.
+  const selfMembers = [{ userId: "host_solo", displayName: "Me", joinStatus: "joined", role: "host", connectionStatus: "online" }];
+  let round = createNetworkRoundState({ roomId: "R", players: [] });
+  // Baseline: loading gate would be TRUE (0 players).
+  assert.equal(round.players.length, 0);
+  // ROUND START path builds a real round with self.
+  const res = buildInitialRoundFromRoom({
+    roomMembers: selfMembers, courseSnapshot: course, startHoleNumber: 1,
+    networkMode: true, localUserId: "host_solo", localDisplayName: "Me",
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.round.players.length, 1);
+  round = roundReducer(round, actions.roundStartFromRoom(res.round));
+  // After start: active, 1 player, not a baseline.
+  assert.equal(round.status, "active");
+  assert.equal(round.players.length, 1);
+  assert.notEqual(round.isNetworkBaseline, true);
+  // Loading gate must be FALSE now.
+  const loadingGate = (round.status === "pending" || round.isNetworkBaseline === true) && round.players.length === 0;
+  assert.equal(loadingGate, false, "single-device host must NOT be stuck after ROUND START");
+  // decideNetworkBaseline must not re-clobber.
+  assert.equal(decideNetworkBaseline({ networkCommunicationEnabled: true, round }), "none");
+});
+
+await test("J2. bare roundStart on baseline leaves loading gate TRUE (why home button must route to overlay)", () => {
+  // This documents the stall the routing fix avoids: flipping a baseline
+  // to active via bare ROUND_START adds NO players.
+  let round = createNetworkRoundState({ roomId: "R", players: [] });
+  round = roundReducer(round, actions.roundStart());
+  assert.equal(round.status, "active");
+  assert.equal(round.players.length, 0);
+  const loadingGate = (round.status === "pending" || round.isNetworkBaseline === true) && round.players.length === 0;
+  assert.equal(loadingGate, true, "bare start strands the user — confirms the routing fix is required");
+});
+
+console.log(`
+${passed} passed, 0 failed`);

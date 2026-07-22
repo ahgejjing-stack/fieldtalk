@@ -387,6 +387,9 @@ function AppShell() {
       networkMode: true,
       localUserId: identity.userId,
       localDisplayName: identity.displayName,
+      // RC4 — adopt the server-authoritative roundId so both phones show
+      // the SAME roundId (Founder Test C / diagnostic parity).
+      roundId: payload.roundId,
     });
     if (result.ok) {
       // RC4 diagnostics — Founder device test observability.
@@ -407,6 +410,12 @@ function AppShell() {
       dispatch(actions.roundStartFromRoom(result.round));
       setScreen("round");
       showToast("Host가 라운드를 시작했습니다");
+    } else {
+      // RC4 diagnostic — the receiver got round_started but couldn't build
+      // a round. This is a real stall cause (guest clears payload and never
+      // navigates), so surface exactly why.
+      // eslint-disable-next-line no-console
+      console.error("[GUEST] round_started build FAILED", `reason=${result.reason}`, `hasCourse=${!!payload.courseSnapshot}`, `players=${(payload.players ?? []).length}`);
     }
     communication.clearRoundStartedPayload?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps

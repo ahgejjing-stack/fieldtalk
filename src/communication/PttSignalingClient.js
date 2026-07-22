@@ -152,7 +152,10 @@ export class PttSignalingClient {
   /** Runtime Identity v0.4 §9 — Host-only, server-validated against the
    * socket's bound identity (never trusts a claimed senderUserId). */
   sendRoundStart({ roundId, courseSnapshot, startHole, startedAt, players }) {
-    this._send({
+    // RC4 diagnostic — Stage 1: does the request leave the client?
+    // eslint-disable-next-line no-console
+    console.log("[CLIENT]", "round_start_request", `roomId=${this.roomId}`, `roundId=${roundId}`, `players=${players?.length ?? 0}`);
+    const sent = this._send({
       type: "round_start_request",
       roomId: this.roomId,
       senderUserId: this.userId,
@@ -162,6 +165,10 @@ export class PttSignalingClient {
       startedAt,
       players,
     });
+    if (!sent) {
+      // eslint-disable-next-line no-console
+      console.warn("[CLIENT]", "round_start_request NOT SENT — socket not open", `readyState=${this.ws?.readyState}`);
+    }
   }
 
   // RC1 Networking Recovery — distance sharing was never sent over the

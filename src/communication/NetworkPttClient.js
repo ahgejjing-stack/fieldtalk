@@ -637,6 +637,18 @@ export class NetworkPttClient extends PttClient {
     // touch Round Engine directly (Communication layer owns transport
     // only — see docs/REAL_PTT_ARCHITECTURE_v1.md's domain boundary).
     this.signaling.on("round_started", (msg) => {
+      // RC4 diagnostic — Stage 3/4: did the broadcast reach THIS client?
+      // Host and guest share this path; the label distinguishes them by
+      // whether this client is the round's host.
+      const amHost = this.state?.hostUserId ? this.state.hostUserId === this.userId : null;
+      // eslint-disable-next-line no-console
+      console.log(
+        amHost === true ? "[HOST]" : amHost === false ? "[GUEST]" : "[CLIENT]",
+        "received round_started",
+        `roomId=${msg.roomId}`,
+        `roundId=${msg.roundId}`,
+        `players=${(msg.players ?? []).map((p) => p.id).join(",")}`
+      );
       this._setState({ roundStartedPayload: msg });
     });
     this.signaling.on("distance_share", (msg) => {
@@ -668,6 +680,9 @@ export class NetworkPttClient extends PttClient {
       this._setState({ receivedHoleSync: msg });
     });
     this.signaling.on("round_start_denied", (msg) => {
+      // RC4 diagnostic — a denial is a concrete stall cause; surface it.
+      // eslint-disable-next-line no-console
+      console.warn("[CLIENT] round_start_denied", `reason=${msg.reason}`);
       this._setState({ lastError: `round_start_denied:${msg.reason}` });
     });
     this.signaling.on("host_changed", (msg) => {

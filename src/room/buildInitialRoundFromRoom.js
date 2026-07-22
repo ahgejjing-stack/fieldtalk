@@ -45,6 +45,7 @@ export function buildInitialRoundFromRoom({
   networkMode = false,
   localUserId = null,
   localDisplayName = null,
+  roundId: explicitRoundId = null,
 }) {
   let players = createRoundPlayersFromRoom(roomMembers ?? [], { networkMode, localUserId });
 
@@ -100,7 +101,11 @@ export function buildInitialRoundFromRoom({
     );
   }
 
-  const roundId = `round_${Date.now()}`;
+  // RC4 — when the server/host provides a roundId (round_started payload),
+  // adopt it verbatim so EVERY device shares one server-authoritative
+  // roundId (Founder Test C). Only the host's original build mints a new
+  // one (explicitRoundId is null there).
+  const roundId = explicitRoundId ?? `round_${Date.now()}`;
 
   const round = {
     schemaVersion: 1,

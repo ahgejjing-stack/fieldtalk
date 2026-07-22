@@ -3,6 +3,7 @@ import { roundReducer } from "../engine/roundReducer.js";
 import * as actions from "../engine/roundActions.js";
 import { loadRound, saveRound } from "../engine/roundStorage.js";
 import { createRoundSeed, createNetworkRoundState } from "../data/roundSeed.js";
+import { decideNetworkBaseline } from "../room/decideNetworkBaseline.js";
 import { useIdentity } from "./useIdentity.js";
 import { useCommunication } from "./useCommunication.js";
 import { useRoom } from "./useRoom.js";
@@ -12,6 +13,22 @@ export const RoundContext = createContext(null);
 
 function init(userId) {
   return loadRound(userId) ?? createRoundSeed();
+}
+
+// RC4 diagnostic — [ROUND PROVIDER STATE]: log every Round Engine
+// transition with prev/next roundId·status·players.length so a device test
+// shows exactly which action moved the round into (or out of) a pending /
+// empty state. Wraps the pure reducer without changing its behaviour.
+function loggingRoundReducer(state, action) {
+  const next = roundReducer(state, action);
+  // eslint-disable-next-line no-console
+  console.log(
+    "[ROUND PROVIDER STATE]",
+    `action=${action?.type}`,
+    `prev=${state?.id}/${state?.status}/${state?.players?.length ?? 0}`,
+    `next=${next?.id}/${next?.status}/${next?.players?.length ?? 0}`
+  );
+  return next;
 }
 
 export default function RoundProvider({ children }) {
@@ -27,7 +44,7 @@ export default function RoundProvider({ children }) {
   // works correctly for every component (PlayerCard/ScoreCard/
   // DistanceCard/PTTButton) since none of them import ME_PLAYER_ID
   // directly — they all read `meId` from this context.
-  const [round, dispatch] = useReducer(roundReducer, identity.userId, init);
+  const [round, dispatch] = useReducer(loggingRoundReducer, identity.userId, init);
 
   // Kept in sync every render so guarded helpers (startPTT, etc.) always see
   // the freshest state even when called from an event handler closure.
@@ -53,20 +70,24 @@ export default function RoundProvider({ children }) {
   // clobbering a real live network round (`round_<ts>` + active), so this
   // never wipes a round that round_started already hydrated.
   useEffect(() => {
-    if (!networkCommunicationEnabled) return;
+    const decision = decideNetworkBaseline({ networkCommunicationEnabled, round });
+    if (decision !== "baseline") return;
     const onDemoSeed = round.id === "round_demo_001";
-    const onLiveNetworkRound = typeof round.id === "string" && round.id.startsWith("round_") && round.status === "active";
-    if (onDemoSeed || (!onLiveNetworkRound && !round.isNetworkBaseline)) {
-      dispatch(
-        actions.roundEnterNetworkBaseline(
-          createNetworkRoundState({
-            roomId: room?.code ?? null,
-            hostUserId: room?.hostUserId ?? null,
-            players: [], // roster arrives via round_started; empty is valid (loading)
-          })
-        )
-      );
-    }
+    // eslint-disable-next-line no-console
+    console.log(
+      "[ROUND MODE]",
+      "mode=network",
+      onDemoSeed ? "→ removing demo seed, entering clean network baseline" : "→ entering clean network baseline"
+    );
+    dispatch(
+      actions.roundEnterNetworkBaseline(
+        createNetworkRoundState({
+          roomId: room?.code ?? null,
+          hostUserId: room?.hostUserId ?? null,
+          players: [], // roster arrives via round_started; empty is valid (loading)
+        })
+      )
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [networkCommunicationEnabled, round.id]);
 
