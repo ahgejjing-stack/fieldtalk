@@ -66,10 +66,19 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
 
       switch (msg.type) {
         case "room_join": {
-          const { roomId, userId, displayName, deviceSessionId } = msg;
-          log("[ROOM JOIN REQUEST]", { roomId, userId, displayName, remoteAddress });
+          const { roomId, userId, displayName, deviceSessionId, requireExisting } = msg;
+          log("[ROOM JOIN REQUEST]", { roomId, userId, displayName, requireExisting, remoteAddress });
           if (!roomId || !userId) {
             log("[ROOM JOIN FAILED]", { roomId, userId, reason: "missing_roomId_or_userId" });
+            return;
+          }
+          // RC4 Session Recovery — a [계속하기] rejoin sets requireExisting:
+          // true. If the room no longer has any connected members (ended /
+          // expired), do NOT re-create an empty room — tell the client so it
+          // can clear its stale activeRoomRef and return Home.
+          if (requireExisting && !registry.roomExists(roomId)) {
+            log("[ROOM JOIN DENIED]", { roomId, userId, reason: "room_not_active" });
+            ws.send(JSON.stringify({ type: "room_join_denied", roomId, reason: "room_not_active" }));
             return;
           }
           registry.addMember(roomId, userId, ws, { displayName, deviceSessionId });

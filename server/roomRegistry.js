@@ -78,6 +78,15 @@ export class RoomRegistry {
     return this.rooms.get(roomId)?.members.has(userId) ?? false;
   }
 
+  /** RC4 Session Recovery — does this room currently exist with at least
+   * one connected member? Used to reject a [계속하기] rejoin into a room
+   * that has ended/expired (everyone left), instead of silently
+   * re-creating an empty one. */
+  roomExists(roomId) {
+    const room = this.rooms.get(roomId);
+    return !!room && room.members.size > 0;
+  }
+
   getHostUserId(roomId) {
     return this.rooms.get(roomId)?.hostUserId ?? null;
   }

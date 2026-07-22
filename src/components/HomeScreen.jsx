@@ -5,6 +5,7 @@ import RoomOverlay from "./RoomOverlay.jsx";
 import { useRoom } from "../context/useRoom.js";
 import { useIdentity } from "../context/useIdentity.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
+import { loadActiveRoomRef, clearActiveRoomRef } from "../room/activeRoomRef.js";
 
 // Two Device PTT Foundation v0.1 — DEV-only entry point, same convention
 // as RoomOverlay.jsx's debug display.
@@ -34,8 +35,100 @@ export default function HomeScreen({
 }) {
   const { room, dispatch, actions } = useRoom();
   const identity = useIdentity();
-  const { setNetworkCommunicationEnabled } = useRuntimeMode();
+  const { setNetworkCommunicationEnabled, setRejoinRequested } = useRuntimeMode();
   const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
+
+  // RC4 Session Recovery — the minimal active-room reference that survives
+  // an app restart (roomId/userId/roundId/lastHole, NOT stale members).
+  // Read once on mount; used to render the "진행 중인 라운드" card. Only
+  // offered when it belongs to THIS identity — never another person's
+  // leftover reference on a shared device.
+  const [activeRef, setActiveRef] = useState(() => {
+    const ref = loadActiveRoomRef();
+    return ref && ref.userId === identity.userId ? ref : null;
+  });
+
+  // [계속하기] — rejoin the SAME room with the SAME identity, asking the
+  // server to confirm it's still active (requireExisting). Live roster +
+  // round are rebuilt from the server, never from stale local data.
+  const handleContinueRound = () => {
+    if (!activeRef) return;
+    dispatch(actions.roomJoinByCode(activeRef.roomId, identity.userId, identity.displayName));
+    setRejoinRequested?.(true);
+    setNetworkCommunicationEnabled(true);
+    setRoomOverlayOpen(true);
+  };
+
+  // [이 방 나가기] from the recovery card — the user explicitly abandons
+  // the recoverable room. Clear the reference so it's never offered again.
+  const handleDiscardActiveRoom = () => {
+    clearActiveRoomRef();
+    setActiveRef(null);
+    onToast("이전 라운드를 종료했습니다");
+  };
+
+  // RC4 Session/Identity patch — nickname confirmation gate before
+  // entering Network Mode. `pendingConnect` holds the network action to
+  // run AFTER the person confirms (or changes) their nickname, so we
+  // never silently reuse a stored nickname without an explicit [Use].
+  // `nameDraft` backs the inline [Change] editor. One confirmation per
+  // session (sessionStorage), so it isn't nagging on every tap.
+  const [pendingConnect, setPendingConnect] = useState(null); // null | (() => void)
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+
+  const NICK_CONFIRMED_KEY = "fieldtalk.nickConfirmed.session.v1";
+  const nickConfirmedThisSession = () => {
+    try {
+      return typeof window !== "undefined" && window.sessionStorage?.getItem(NICK_CONFIRMED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const markNickConfirmed = () => {
+    try {
+      window.sessionStorage?.setItem(NICK_CONFIRMED_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Wraps any network-entry action behind the nickname gate. If the
+  // nickname was already confirmed this session, runs immediately;
+  // otherwise stashes the action and opens the confirm sheet.
+  const withNicknameConfirmed = (action) => {
+    if (nickConfirmedThisSession()) {
+      action();
+      return;
+    }
+    setNameDraft(identity.displayName ?? "");
+    setEditingName(false);
+    setPendingConnect(() => action);
+  };
+
+  const handleUseNickname = () => {
+    markNickConfirmed();
+    const action = pendingConnect;
+    setPendingConnect(null);
+    setEditingName(false);
+    if (action) action();
+  };
+
+  const handleChangeNickname = () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+    identity.confirmDisplayName?.(trimmed);
+    markNickConfirmed();
+    const action = pendingConnect;
+    setPendingConnect(null);
+    setEditingName(false);
+    if (action) action();
+  };
+
+  const cancelNicknameGate = () => {
+    setPendingConnect(null);
+    setEditingName(false);
+  };
 
   // RC1-WEEK3 §1 — a real invite link landed here. Join immediately and
   // open the same Room Overlay the manual "팀 연결" flow uses — no
@@ -61,25 +154,27 @@ export default function HomeScreen({
   ];
 
   const handleTeamConnect = () => {
-    if (!room) {
-      dispatch(actions.roomCreate(identity.userId, identity.displayName));
-    }
-    // RC2 mic permission timing fix: request mic permission synchronously,
-    // tied directly to this tap. iOS/WebKit can lose "user activation"
-    // context by the time an async network round-trip (room_joined)
-    // resolves, which is when the existing prepare-mic-in-parallel logic
-    // fires — the permission dialog can then appear disconnected from
-    // any visible action, "suddenly", much later. Asking here instead
-    // means it's always tied to the tap the person just made. Once
-    // granted, the later flow just reuses it — no second prompt.
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then((stream) => stream.getTracks().forEach((t) => t.stop()))
-        .catch(() => {}); // denial/failure surfaces normally later via the real prepare() flow
-    }
-    setNetworkCommunicationEnabled(true);
-    setRoomOverlayOpen(true);
+    withNicknameConfirmed(() => {
+      if (!room) {
+        dispatch(actions.roomCreate(identity.userId, identity.displayName));
+      }
+      // RC2 mic permission timing fix: request mic permission synchronously,
+      // tied directly to this tap. iOS/WebKit can lose "user activation"
+      // context by the time an async network round-trip (room_joined)
+      // resolves, which is when the existing prepare-mic-in-parallel logic
+      // fires — the permission dialog can then appear disconnected from
+      // any visible action, "suddenly", much later. Asking here instead
+      // means it's always tied to the tap the person just made. Once
+      // granted, the later flow just reuses it — no second prompt.
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+        navigator.mediaDevices
+          .getUserMedia({ audio: true })
+          .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+          .catch(() => {}); // denial/failure surfaces normally later via the real prepare() flow
+      }
+      setNetworkCommunicationEnabled(true);
+      setRoomOverlayOpen(true);
+    });
   };
 
   // RC1-WEEK3 §1 — the real replacement for "호스트가 동반자 상태를 대신
@@ -131,9 +226,13 @@ export default function HomeScreen({
     if (!room) {
       // 홈 화면의 동반자 섹션은 항상 보이는 UI라, "팀 연결"을 먼저 누르지
       // 않아도 즉시 동작해야 한다 — Room을 이 시점에 lazily 생성한다.
-      dispatch(actions.roomCreate(identity.userId, identity.displayName));
-      dispatch(actions.roomMemberInvite(companion.id, companion.name));
-      setNetworkCommunicationEnabled(true);
+      // RC4 Session/Identity patch — but first go through the nickname
+      // gate, since this lazily turns Network Mode on too.
+      withNicknameConfirmed(() => {
+        dispatch(actions.roomCreate(identity.userId, identity.displayName));
+        dispatch(actions.roomMemberInvite(companion.id, companion.name));
+        setNetworkCommunicationEnabled(true);
+      });
       return;
     }
     const member = room.members.find((m) => m.userId === companion.id);
@@ -168,6 +267,31 @@ export default function HomeScreen({
           <h1>안녕하세요, {identity.displayName}님</h1>
           <p>오늘 라운드를 시작해볼까요?</p>
         </div>
+
+        {/* RC4 Session Recovery — active/recent room card. Shown only when a
+            valid recovery reference for THIS identity exists. Reuses the
+            existing CTA card styling; no new screen. [계속하기] rejoins via
+            the server (which confirms the room is still active); [이 방
+            나가기] discards the reference. Never auto-reconnects. */}
+        {activeRef && !room && (
+          <div className="ft-cta-card">
+            <div className="ft-cta-ring" />
+            <div className="ft-cta-top">
+              <span className="ft-eyebrow">진행 중인 라운드</span>
+            </div>
+            <div className="ft-cta-course">Room {activeRef.roomId}</div>
+            <div className="ft-cta-sub">
+              {activeRef.lastHole ? `현재 ${activeRef.lastHole}번 홀` : "라운드 이어하기"}
+            </div>
+            <button className="ft-primary-btn" onClick={handleContinueRound}>
+              <Radio size={18} strokeWidth={2.2} />
+              계속하기
+            </button>
+            <button className="ft-team-connect-btn" onClick={handleDiscardActiveRoom}>
+              이 방 나가기
+            </button>
+          </div>
+        )}
 
         <div className="ft-cta-card">
           <div className="ft-cta-ring" />
@@ -337,6 +461,73 @@ export default function HomeScreen({
           onStartRound();
         }}
       />
+
+      {/* RC4 Session/Identity patch — nickname confirmation gate. Reuses
+          the existing namegate styling; no new design language. Shown
+          before Network Mode turns on, so a stored nickname is never used
+          silently. */}
+      {pendingConnect && (
+        <div className="ft-gallery-overlay">
+          <div className="ft-gallery-scrim" onClick={cancelNicknameGate} />
+          <div className="ft-namegate" style={{ position: "relative", zIndex: 1 }}>
+            <div className="ft-namegate-icon">
+              <Radio size={28} strokeWidth={2} />
+            </div>
+            <div className="ft-namegate-title">팀 연결</div>
+            {!editingName ? (
+              <>
+                <p className="ft-namegate-sub">
+                  이 이름으로 팀에 참가합니다.
+                  <br />
+                  현재 닉네임
+                </p>
+                <div className="ft-namegate-current" style={{ fontSize: 22, fontWeight: 700, margin: "8px 0 16px" }}>
+                  {identity.displayName}
+                </div>
+                <button type="button" className="ft-namegate-btn" onClick={handleUseNickname}>
+                  이 이름으로 사용
+                </button>
+                <button
+                  type="button"
+                  className="ft-two-device-dev-entry"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    setNameDraft(identity.displayName ?? "");
+                    setEditingName(true);
+                  }}
+                >
+                  이름 변경
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="ft-namegate-sub">사용할 이름을 입력하세요.</p>
+                <input
+                  className="ft-namegate-input"
+                  type="text"
+                  inputMode="text"
+                  placeholder="이름"
+                  value={nameDraft}
+                  maxLength={12}
+                  autoFocus
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleChangeNickname();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="ft-namegate-btn"
+                  onClick={handleChangeNickname}
+                  disabled={!nameDraft.trim()}
+                >
+                  확인
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

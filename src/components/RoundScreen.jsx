@@ -4,6 +4,7 @@ import { useRound } from "../context/useRound.js";
 import { useNowTick } from "../hooks/useNowTick.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
 import { useCommunication } from "../context/useCommunication.js";
+import { clearActiveRoomRef } from "../room/activeRoomRef.js";
 import { formatParRelative } from "../utils/scoreFormat.js";
 import {
   selectCurrentHole,
@@ -183,6 +184,12 @@ export default function RoundScreen({ onBack, onToast }) {
 
   const handleEndRoundConfirmed = () => {
     dispatch(actions.roundComplete());
+    // RC4 Session Recovery — ending the round makes it non-recoverable.
+    // Clear this device's active-room reference so it's never offered for
+    // [계속하기]. Other participants' stale references are cleaned up on
+    // their next rejoin attempt, which the server rejects as inactive
+    // (room_join_denied) once the room empties out.
+    clearActiveRoomRef();
     setShowEndRoundConfirm(false);
   };
 

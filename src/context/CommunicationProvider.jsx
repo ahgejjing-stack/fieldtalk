@@ -87,8 +87,11 @@ export function CommunicationProvider({
     // Bidirectional Hardening v0.2 Part G: the main Room/Round flow has no
     // separate "Room 참가" button like TwoDeviceTestScreen.jsx — turning
     // network mode on IS the explicit opt-in, so auto-connect here.
+    // RC4 Session Recovery — when this connect is a [계속하기] rejoin,
+    // networkConfig.requireExisting is set so the server rejects an
+    // ended/expired room instead of re-creating an empty one.
     if (communicationMode === COMMUNICATION_MODES.NETWORK && typeof clientRef.current.connectToRoom === "function") {
-      clientRef.current.connectToRoom();
+      clientRef.current.connectToRoom({ requireExisting: !!networkConfig?.requireExisting });
     }
 
     return () => unsubscribe();

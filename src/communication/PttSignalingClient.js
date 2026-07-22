@@ -93,10 +93,14 @@ export class PttSignalingClient {
     return true;
   }
 
-  join(roomId, userId, displayName, deviceSessionId) {
+  join(roomId, userId, displayName, deviceSessionId, options = {}) {
     this.roomId = roomId;
     this.userId = userId;
-    this._send({ type: "room_join", roomId, userId, displayName, deviceSessionId });
+    const msg = { type: "room_join", roomId, userId, displayName, deviceSessionId };
+    // RC4 Session Recovery — a [계속하기] rejoin passes requireExisting so
+    // the server rejects an ended/expired room instead of re-creating it.
+    if (options.requireExisting) msg.requireExisting = true;
+    this._send(msg);
   }
 
   /** @returns {Promise<{type: "ptt_granted"} | {type: "ptt_denied", reason: string}>} */

@@ -345,7 +345,7 @@ export class NetworkPttClient extends PttClient {
 
   // ---- Signaling wiring -------------------------------------------------
 
-  async connectToRoom() {
+  async connectToRoom({ requireExisting = false } = {}) {
     if (this._joined) return { ok: true };
     this._p0Lifecycle = this._makeEmptyP0Lifecycle(); // RC4 P0 — fresh trace per attempt
     this._setState({ connectionState: "connecting", p0Lifecycle: this._p0Lifecycle });
@@ -375,6 +375,7 @@ export class NetworkPttClient extends PttClient {
         clearTimeout(timeoutId);
         unsubJoined();
         unsubClosed();
+        unsubDenied?.();
         if (!result.ok) this._logP0Stage("roomJoin", "FAIL", { reason: result.reason });
         resolve(result);
       };
@@ -403,7 +404,21 @@ export class NetworkPttClient extends PttClient {
       // while we're still waiting for the ack must resolve, not hang.
       const unsubClosed = this.signaling.on("socket_closed", () => finish({ ok: false, reason: "connection_lost_during_join" }));
 
-      this.signaling.join(this.identity.roomId, this.identity.userId, this.identity.displayName, this.identity.deviceSessionId);
+      // RC4 Session Recovery — a [계속하기] rejoin into an ended/expired
+      // room comes back as room_join_denied. Resolve with that reason so
+      // the caller can clear the stale activeRoomRef and return Home.
+      const unsubDenied = this.signaling.on("room_join_denied", (msg) => {
+        this._setState({ lastError: `room_join_denied:${msg.reason ?? "unknown"}` });
+        finish({ ok: false, reason: msg.reason ?? "room_join_denied" });
+      });
+
+      this.signaling.join(
+        this.identity.roomId,
+        this.identity.userId,
+        this.identity.displayName,
+        this.identity.deviceSessionId,
+        { requireExisting }
+      );
     });
   }
 

@@ -3,6 +3,8 @@ import { ChevronLeft, X, Check, Mic } from "lucide-react";
 import { useRoom } from "../context/useRoom.js";
 import { useRound } from "../context/useRound.js";
 import { useStartRoundFromRoom } from "../room/useStartRoundFromRoom.js";
+import { clearRoomState } from "../room/roomStorage.js";
+import { clearActiveRoomRef } from "../room/activeRoomRef.js";
 import { selectJoinedMembers, selectRoomWarnings, ROOM_WARNING_LABELS } from "../room/roomSelectors.js";
 import { courseReferenceService, courseProviderA, courseProviderB } from "../course/courseReferenceServiceInstance.js";
 import { useCommunication } from "../context/useCommunication.js";
@@ -299,6 +301,17 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   function handleLeaveRoom() {
     communication.leaveRoom?.();
     dispatch(actions.roomReset());
+    // RC4 Session Recovery — explicit leave removes the recoverable room:
+    // clear the persisted room AND the active-room reference so it's never
+    // offered for [계속하기] again. (This is the ONLY path, besides End
+    // Round and a server-confirmed-expired rejoin, that discards the ref.)
+    clearRoomState(identity.userId);
+    clearActiveRoomRef();
+    try {
+      window.sessionStorage?.removeItem("fieldtalk.nickConfirmed.session.v1");
+    } catch {
+      /* ignore */
+    }
     setNetworkCommunicationEnabled(false);
     onClose();
     onToast("팀 연결을 종료했습니다");

@@ -36,8 +36,8 @@ function resolveInitialIdentity() {
  * class of bug for a DEV-only, infrequent action.
  */
 export function IdentityProvider({ children }) {
-  const [identity] = useState(resolveInitialIdentity);
-  const [hasStoredIdentity] = useState(() => !!loadIdentity());
+  const [identity, setIdentityState] = useState(resolveInitialIdentity);
+  const [hasStoredIdentity, setHasStoredIdentity] = useState(() => !!loadIdentity());
   const [deviceSessionId] = useState(() => loadOrCreateDeviceSessionId(() => makeDeviceSessionId(identity.userId)));
 
   const setIdentity = (userId, displayName) => {
@@ -46,12 +46,31 @@ export function IdentityProvider({ children }) {
     if (typeof window !== "undefined") window.location.reload();
   };
 
+  // RC4 Session/Identity patch — the confirm-nickname flow (Use / Change)
+  // needed before entering Network Mode. Unlike setIdentity(), this keeps
+  // the SAME userId (it's the same person, just confirming or lightly
+  // editing the display name for this session) so NO page reload is
+  // required: every consumer reads identity.displayName from this context,
+  // and userId — which Room/Round/PTT/Cheer/Score all key off — is
+  // unchanged. This is the ONE identity source; there is no second copy to
+  // keep in sync. Persists the confirmed name so the greeting and the
+  // participant list can never disagree with what was just confirmed.
+  const confirmDisplayName = (displayName) => {
+    const trimmed = (displayName ?? "").trim();
+    if (!trimmed) return;
+    const next = { userId: identity.userId, displayName: trimmed };
+    saveIdentity(next);
+    setIdentityState(next);
+    setHasStoredIdentity(true);
+  };
+
   const value = useMemo(
     () => ({
       userId: identity.userId,
       displayName: identity.displayName,
       deviceSessionId,
       setIdentity,
+      confirmDisplayName,
       demoIdentities: DEMO_IDENTITIES,
       hasStoredIdentity, // RC2 real-person-joining fix — see NameEntryGate.jsx
     }),

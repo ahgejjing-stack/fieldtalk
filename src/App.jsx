@@ -21,6 +21,10 @@ import P0DebugOverlay from "./components/P0DebugOverlay.jsx";
 const isDevModeTopLevel = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 import { useCommunication } from "./context/useCommunication.js";
 import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
+// RC4 Session Recovery — minimal active-room reference (roomId/userId/
+// roundId/...), persisted separately from full room state so an
+// interruption can offer [계속하기] without restoring stale members.
+import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
 // sender path calls via useAudioEngine), not a second playback path.
 import { playSoundById } from "./services/audioEngine.js";
@@ -102,7 +106,7 @@ function useIsRealDeviceViewport() {
  */
 function CommunicationBridge({ children }) {
   const { room } = useRoom();
-  const { networkCommunicationEnabled } = useRuntimeMode();
+  const { networkCommunicationEnabled, rejoinRequested } = useRuntimeMode();
   const identity = useIdentity();
 
   const useNetwork = networkCommunicationEnabled && !!room;
@@ -116,6 +120,9 @@ function CommunicationBridge({ children }) {
           displayName: identity.displayName,
           deviceSessionId: identity.deviceSessionId,
         },
+        // RC4 Session Recovery — a [계속하기] rejoin asks the server to
+        // reject an ended/expired room instead of re-creating an empty one.
+        requireExisting: !!rejoinRequested,
         // RC2 review: STUN costs nothing and needs no infrastructure --
         // public servers are free and widely used for exactly this.
         // TURN is a different story (needs a real server, see the
@@ -139,7 +146,7 @@ function AppShell() {
   const identity = useIdentity();
   const communication = useCommunication();
   const { room, dispatch: roomDispatch, actions: roomActions } = useRoom();
-  const { networkCommunicationEnabled, setNetworkCommunicationEnabled, mode: courseRuntimeMode } = useRuntimeMode();
+  const { networkCommunicationEnabled, setNetworkCommunicationEnabled, mode: courseRuntimeMode, rejoinRequested, setRejoinRequested } = useRuntimeMode();
   const isRealDevice = useIsRealDeviceViewport();
 
   const showToast = (msg) => {
@@ -189,6 +196,50 @@ function AppShell() {
     }
     setScreen("round");
   };
+
+  // RC4 Session Recovery — persist the MINIMUM recovery reference whenever
+  // we're in a live network room. Only roomId/userId/displayName/role/
+  // roundId/lastHole — deliberately NOT room.members (stale roster was the
+  // old bug). This is what lets a terminated/backgrounded app offer
+  // [계속하기] on next launch. Explicit Leave / End Round clear it
+  // elsewhere; a mere restart never does.
+  useEffect(() => {
+    if (!networkCommunicationEnabled || !room) return;
+    const myMember = room.members?.find((m) => m.userId === identity.userId);
+    saveActiveRoomRef({
+      roomId: room.code,
+      userId: identity.userId,
+      displayName: identity.displayName,
+      role: myMember?.role ?? (room.hostUserId === identity.userId ? "host" : "member"),
+      roundId: round.id && round.id !== "round_demo_001" ? round.id : null,
+      lastHole: round.currentHoleNumber ?? null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [networkCommunicationEnabled, room?.code, room?.members, round.id, round.currentHoleNumber, identity.userId]);
+
+  // RC4 Session Recovery — outcome of a [계속하기] rejoin. If the server
+  // rejected it (room ended/expired), clear the stale activeRoomRef, tear
+  // down the half-open network mode, and return Home with a simple
+  // message. On success, just consume the one-shot rejoin flag; the live
+  // roster/round come from the server, never from stale local data.
+  useEffect(() => {
+    if (!rejoinRequested) return;
+    const err = communication.lastError ?? "";
+    if (typeof err === "string" && err.startsWith("room_join_denied")) {
+      clearActiveRoomRef();
+      communication.leaveRoom?.();
+      roomDispatch(roomActions.roomReset());
+      setNetworkCommunicationEnabled(false);
+      setRejoinRequested(false);
+      setScreen("home");
+      showToast("이전 라운드가 종료되었거나 만료되었습니다");
+      return;
+    }
+    if (communication.connectionState === "connected" || communication.connectionState === "media_reconnecting") {
+      setRejoinRequested(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rejoinRequested, communication.lastError, communication.connectionState]);
 
   // Runtime Identity v0.4 §7 — "서버 membership을 연결 상태의 source of
   // truth로 사용... member_online/member_offline을 Room actions로

@@ -23,6 +23,8 @@ const RuntimeModeContext = createContext({
   locationProvider: null,
   networkCommunicationEnabled: false,
   setNetworkCommunicationEnabled: () => {},
+  rejoinRequested: false,
+  setRejoinRequested: () => {},
 });
 
 export function RuntimeModeProvider({ children }) {
@@ -34,6 +36,10 @@ export function RuntimeModeProvider({ children }) {
   // which need a signaling server) is completely unaffected — nobody is
   // ever auto-connected to a WebSocket server they didn't ask for.
   const [networkCommunicationEnabled, setNetworkCommunicationEnabled] = useState(false);
+  // RC4 Session Recovery — true only for a [계속하기] rejoin, so the next
+  // network connect uses requireExisting (server rejects an ended room
+  // rather than re-creating it). One-shot: consumed by CommunicationBridge.
+  const [rejoinRequested, setRejoinRequested] = useState(false);
 
   // §6: Demo -> MockLocationProvider (fixed test coordinate), Production ->
   // BrowserLocationProvider (real navigator.geolocation). Components never
@@ -46,8 +52,16 @@ export function RuntimeModeProvider({ children }) {
   }, [mode]);
 
   const value = useMemo(
-    () => ({ mode, setMode, locationProvider, networkCommunicationEnabled, setNetworkCommunicationEnabled }),
-    [mode, locationProvider, networkCommunicationEnabled]
+    () => ({
+      mode,
+      setMode,
+      locationProvider,
+      networkCommunicationEnabled,
+      setNetworkCommunicationEnabled,
+      rejoinRequested,
+      setRejoinRequested,
+    }),
+    [mode, locationProvider, networkCommunicationEnabled, rejoinRequested]
   );
 
   return <RuntimeModeContext.Provider value={value}>{children}</RuntimeModeContext.Provider>;
