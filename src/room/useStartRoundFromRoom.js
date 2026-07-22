@@ -18,11 +18,18 @@
  */
 import { useRoom } from "../context/useRoom.js";
 import { useRound } from "../context/useRound.js";
+import { useIdentity } from "../context/useIdentity.js";
+import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
 import { buildInitialRoundFromRoom } from "./buildInitialRoundFromRoom.js";
 
 export function useStartRoundFromRoom() {
   const { room, dispatch: roomDispatch, actions: roomActions } = useRoom();
   const { dispatch: roundDispatch, actions: roundActions } = useRound();
+  const identity = useIdentity();
+  // RC4 P0-1 — the host must build a network round with the demo filter on
+  // whenever network mode is engaged, so a DEV companion that got toggled
+  // into the local room never becomes a real Round Player.
+  const { networkCommunicationEnabled } = useRuntimeMode();
 
   /**
    * @returns {{ ok: true } | { ok: false, reason: string }}
@@ -36,6 +43,9 @@ export function useStartRoundFromRoom() {
       roomMembers: room.members,
       courseSnapshot,
       startHoleNumber,
+      networkMode: !!networkCommunicationEnabled,
+      localUserId: identity.userId,
+      localDisplayName: identity.displayName,
     });
     if (!result.ok) {
       return result;

@@ -92,6 +92,11 @@ export class NetworkPttClient extends PttClient {
       remoteInputLevel: 0,
       roundStartedPayload: null, // Runtime Identity v0.4 §9
       reconnectEvent: null, // RC1-WEEK6 §1.8 — one-shot signal for the UI toast layer: "reconnecting" | "reconnected" | "give_up". Cleared by the consumer.
+      // RC4 P1-2 — Debug Overlay diagnostics for the "remoteSignalDetected
+      // PASS but no audible sound" investigation. Set by the media
+      // pipeline; read (via CommunicationProvider) by P0DebugOverlay.
+      remoteAudioContextState: null, // "running" | "suspended" | "closed" | null
+      remoteTrackAttached: false,
     };
 
     this.listeners = new Set();
@@ -277,6 +282,9 @@ export class NetworkPttClient extends PttClient {
       this._remoteAnalyser = null;
       this._remoteAnalyserData = null;
     }
+    // RC4 P1-2 — keep the Debug Overlay diagnostics honest when the media
+    // pipeline is gone.
+    this._setState({ remoteTrackAttached: false, remoteAudioContextState: null });
   }
 
   /** The full-session failure path — socket closed/errored, a peer
@@ -831,6 +839,10 @@ export class NetworkPttClient extends PttClient {
     }
     this._remoteAudioEl.autoplay = true;
     this._remoteAudioEl.srcObject = stream;
+    // RC4 P1-2 — expose "a remote track is currently attached" to the
+    // Debug Overlay, so the Founder can distinguish "no track at all" from
+    // "track attached but silent".
+    this._setState({ remoteTrackAttached: true });
     this._logP0Stage("audioElementAttach", "PASS", { isReconnectAttach });
 
     this._logP0Stage("playCalled", "PASS", { isReconnectAttach }); // stage 8 — the call itself always happens; PASS here means "attempted", not "succeeded"
@@ -862,6 +874,14 @@ export class NetworkPttClient extends PttClient {
     if (typeof window === "undefined" || !(window.AudioContext || window.webkitAudioContext)) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     this._remoteAnalyserCtx = new Ctx();
+    // RC4 P1-2 — surface the AudioContext state to the Debug Overlay so a
+    // Founder testing on a phone (no desktop console) can see whether it's
+    // "suspended" (a classic iOS autoplay-before-gesture cause of the
+    // "remoteSignalDetected PASS but no sound" symptom) vs "running".
+    this._setState({ remoteAudioContextState: this._remoteAnalyserCtx.state ?? null });
+    this._remoteAnalyserCtx.onstatechange = () => {
+      this._setState({ remoteAudioContextState: this._remoteAnalyserCtx?.state ?? null });
+    };
     const source = this._remoteAnalyserCtx.createMediaStreamSource(stream);
     this._remoteAnalyser = this._remoteAnalyserCtx.createAnalyser();
     this._remoteAnalyser.fftSize = 256;

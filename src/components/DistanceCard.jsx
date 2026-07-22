@@ -182,6 +182,19 @@ export default function DistanceCard({ onToast }) {
       pinLocationStatus,
     });
     if (!calc.ok) {
+      // RC4 P0-4 — the user-facing copy stays deliberately generic (no
+      // technical error text), but log the real machine reason so a
+      // failure like `reference_player_not_found` (meId absent from
+      // round.players — the Issue-1 symptom) is diagnosable from a device
+      // console instead of being silently swallowed by the toast.
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[FIELDTALK P0-4] distance share rejected", {
+          reason: calc.reason,
+          meId,
+          playerIds: round.players.map((p) => p.id),
+          value,
+        });
+      }
       if (onToast) onToast("올바른 거리를 입력해주세요");
       return;
     }

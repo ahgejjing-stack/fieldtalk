@@ -29,7 +29,15 @@ const STATUS_COLOR = {
  * (always "—", manual/human-only — see NetworkPttClient.js) are kept
  * visibly distinct on purpose: the code never claims to have heard
  * anything, only to have measured something. */
-export default function P0DebugOverlay({ p0Lifecycle, p0LevelDebug }) {
+export default function P0DebugOverlay({
+  p0Lifecycle,
+  p0LevelDebug,
+  // RC4 P1-2 — remote-audio diagnostics for the "signal PASS / no sound"
+  // investigation, readable on a phone without a desktop console.
+  remoteAudioContextState = null,
+  remoteTrackAttached = false,
+  lastAudioPlaybackAttempt = null,
+}) {
   const [collapsed, setCollapsed] = useState(true);
   if (!p0Lifecycle) return null;
 
@@ -61,6 +69,29 @@ export default function P0DebugOverlay({ p0Lifecycle, p0LevelDebug }) {
           <div>최대 rawLevel: {p0LevelDebug.maxRawLevel}</div>
         </div>
       )}
+
+      {/* RC4 P1-2 — the five Founder-readable remote-audio diagnostics the
+          RC4 decision asked for, in one place. remoteSignalDetected +
+          play() result already appear in the stage list below; these are
+          the remaining three plus a plain restatement of the play result. */}
+      <div className="ft-p0-overlay-levels">
+        <div>AudioContext: {remoteAudioContextState ?? "—"}</div>
+        <div>Remote Track Attached: {remoteTrackAttached ? "YES" : "NO"}</div>
+        <div>
+          play() 결과:{" "}
+          {lastAudioPlaybackAttempt
+            ? lastAudioPlaybackAttempt.ok
+              ? "OK"
+              : `FAIL (${lastAudioPlaybackAttempt.errorName ?? "unknown"})`
+            : "—"}
+        </div>
+        <div>
+          마지막 재생 오류:{" "}
+          {lastAudioPlaybackAttempt && !lastAudioPlaybackAttempt.ok
+            ? lastAudioPlaybackAttempt.errorMessage ?? lastAudioPlaybackAttempt.errorName ?? "unknown"
+            : "없음"}
+        </div>
+      </div>
 
       {STAGE_ORDER.map((key) => {
         const entry = p0Lifecycle[key];

@@ -21,6 +21,9 @@ import P0DebugOverlay from "./components/P0DebugOverlay.jsx";
 const isDevModeTopLevel = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 import { useCommunication } from "./context/useCommunication.js";
 import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
+// RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
+// sender path calls via useAudioEngine), not a second playback path.
+import { playSoundById } from "./services/audioEngine.js";
 
 function resolveDefaultSignalingUrl() {
   const isHttpsPage = typeof window !== "undefined" && window.location && window.location.protocol === "https:";
@@ -164,7 +167,23 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // RC4 P0-1/P0-2/P0-3 — the demo seed round is identified by its fixed
+  // id. Any round started from a real Room gets a `round_<timestamp>` id
+  // (see buildInitialRoundFromRoom.js / roundActions), so "still on the
+  // seed" is a precise, non-heuristic check.
+  const isDemoSeedRound = round.id === "round_demo_001";
+
   const handleStartRound = () => {
+    // RC4 P0-2/P0-3 — in network mode, entering the round must show the
+    // REAL network round, never the demo seed. If the host's round_started
+    // broadcast hasn't landed yet (or, on the host, runStart() hasn't
+    // built it yet), do NOT fall through to the seed round — that is
+    // exactly the "both devices revert to 재식/재근/광천/해란" symptom.
+    // Wait for the real round instead of showing demo players.
+    if (networkCommunicationEnabled && isDemoSeedRound) {
+      showToast("Host가 라운드를 시작하면 자동으로 입장합니다");
+      return;
+    }
     if (round.status !== "active") {
       dispatch(actions.roundStart());
     }
@@ -242,6 +261,13 @@ function AppShell() {
       roomMembers: roomMembersLike,
       courseSnapshot: payload.courseSnapshot,
       startHoleNumber: payload.startHole,
+      // RC4 P0-1/P0-2 — this receiver path is, by definition, always a
+      // network round (it only runs on a broadcast round_started). Strip
+      // demo ids from the host's payload too, in case the host's own room
+      // was demo-polluted, and always keep THIS device's own identity.
+      networkMode: true,
+      localUserId: identity.userId,
+      localDisplayName: identity.displayName,
     });
     if (result.ok) {
       dispatch(actions.roundStartFromRoom(result.round));
@@ -279,6 +305,7 @@ function AppShell() {
   useEffect(() => {
     const payload = communication.receivedSoundPlayed;
     if (!payload) return;
+    // (1) Event Board — unchanged: adds the "👏 {label}" bubble.
     dispatch(
       actions.soundPlayed({
         soundId: payload.soundId,
@@ -287,6 +314,21 @@ function AppShell() {
         actorPlayerId: payload.actorUserId,
       })
     );
+    // (2) RC4 P1-1 — actually PLAY the cheer on this (remote) device. This
+    // was the missing half: before, a teammate's cheer only ever drew a
+    // silent bubble here. The sender is NOT at risk of double playback —
+    // the signaling server broadcasts sound_played with the sender
+    // EXCLUDED, and NetworkPttClient additionally de-dupes by eventId — so
+    // this effect only ever runs on devices OTHER than the one that tapped
+    // the cheer. Reuses playSoundById (the same engine the sender used).
+    if (payload.soundId) {
+      playSoundById(payload.soundId).catch(() => {
+        // A remote playback failure (e.g. autoplay policy before any user
+        // gesture on this device) must never break the Event Board update
+        // above — swallow it the same way local playback failures surface
+        // only as a toast, not a crash.
+      });
+    }
     communication.clearReceivedSoundPlayed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communication.receivedSoundPlayed]);
@@ -324,8 +366,14 @@ function AppShell() {
             상대방 음성이 재생되지 않고 있습니다. 탭하여 다시 시도하세요.
           </button>
         )}
-        {isDevModeTopLevel && (
-          <P0DebugOverlay p0Lifecycle={communication.p0Lifecycle} p0LevelDebug={communication.p0LevelDebug} />
+        {(isDevModeTopLevel || networkCommunicationEnabled) && (
+          <P0DebugOverlay
+            p0Lifecycle={communication.p0Lifecycle}
+            p0LevelDebug={communication.p0LevelDebug}
+            remoteAudioContextState={communication.remoteAudioContextState}
+            remoteTrackAttached={communication.remoteTrackAttached}
+            lastAudioPlaybackAttempt={communication.lastAudioPlaybackAttempt}
+          />
         )}
       </div>
     </div>

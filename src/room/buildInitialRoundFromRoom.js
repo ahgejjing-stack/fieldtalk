@@ -30,10 +30,42 @@ function makeEventId() {
  * @param {object|null} params.courseSnapshot - normalized CourseReference
  *   (see src/course/normalizeCourse.js), already provider-agnostic
  * @param {number} params.startHoleNumber
+ * @param {boolean} [params.networkMode=false] - RC4 P0-1: when true, demo
+ *   seed ids are stripped from the resulting Round so a real network round
+ *   can never contain prototype demo players.
+ * @param {string|null} [params.localUserId=null] - RC4 P0-2: the current
+ *   device's identity.userId, always preserved in players even under the
+ *   demo filter.
  * @returns {{ ok: true, round: object } | { ok: false, reason: string }}
  */
-export function buildInitialRoundFromRoom({ roomMembers, courseSnapshot, startHoleNumber }) {
-  const players = createRoundPlayersFromRoom(roomMembers ?? []);
+export function buildInitialRoundFromRoom({
+  roomMembers,
+  courseSnapshot,
+  startHoleNumber,
+  networkMode = false,
+  localUserId = null,
+  localDisplayName = null,
+}) {
+  let players = createRoundPlayersFromRoom(roomMembers ?? [], { networkMode, localUserId });
+
+  // RC4 P0-2 — in network mode the local user must ALWAYS be present in
+  // their own round, even if a transient roster gap means their own
+  // member entry hasn't been mirrored into room.members yet at this exact
+  // moment. This never fabricates OTHER players (that would re-introduce a
+  // demo-like fallback); it only guarantees self is never missing, which
+  // is also what keeps "(나)" and self-referenced distance sharing working.
+  if (networkMode && localUserId && !players.some((p) => p.id === localUserId)) {
+    const selfMember = {
+      userId: localUserId,
+      displayName: localDisplayName ?? "나",
+      role: "host",
+      joinStatus: "joined",
+      connectionStatus: "online",
+    };
+    const selfPlayer = createRoundPlayersFromRoom([selfMember], { networkMode, localUserId });
+    players = [...selfPlayer, ...players];
+  }
+
   if (players.length === 0) {
     return { ok: false, reason: "no_joined_members" };
   }

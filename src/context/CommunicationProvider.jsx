@@ -143,6 +143,10 @@ export function CommunicationProvider({
       p0Lifecycle: state.p0Lifecycle ?? null,
       p0LevelDebug: state.p0LevelDebug ?? null,
       lastMemberOnlineEvent: state.lastMemberOnlineEvent ?? null,
+      // RC4 P1-2 — remote-audio diagnostics surfaced to P0DebugOverlay so a
+      // phone-only Founder can read them without a desktop console.
+      remoteAudioContextState: state.remoteAudioContextState ?? null,
+      remoteTrackAttached: state.remoteTrackAttached ?? false,
       retryRemoteAudioPlayback: clientRef.current.retryRemoteAudioPlayback
         ? () => clientRef.current.retryRemoteAudioPlayback()
         : null,
