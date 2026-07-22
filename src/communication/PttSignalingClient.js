@@ -192,6 +192,14 @@ export class PttSignalingClient {
     });
   }
 
+  /** RC4 Issue 4 — announce a DELIBERATE leave before the socket closes,
+   * so the server can transfer host immediately (no grace period) rather
+   * than treating it as a recoverable drop. Best-effort: if the socket is
+   * already gone the plain close() path still cleans up via removeConnection. */
+  leaveRoom() {
+    this._send({ type: "room_leave", roomId: this.roomId, senderUserId: this.userId });
+  }
+
   close() {
     this.ws?.close();
   }

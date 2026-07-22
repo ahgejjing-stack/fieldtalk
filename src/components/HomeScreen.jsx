@@ -456,9 +456,14 @@ export default function HomeScreen({
         isOpen={roomOverlayOpen}
         onClose={() => setRoomOverlayOpen(false)}
         onToast={onToast}
-        onStart={() => {
+        onStart={(startedRound) => {
           setRoomOverlayOpen(false);
-          onStartRound();
+          // RC4 P0 Round Start Deadlock fix (Issue 1-A) — forward the
+          // freshly-built round so App bypasses its stale-closure demo
+          // seed gate for the host. The plain "라운드 시작" button below
+          // still calls onStartRound() with no argument (local/seed path),
+          // so backward compatibility is preserved.
+          onStartRound(startedRound);
         }}
       />
 

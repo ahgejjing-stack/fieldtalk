@@ -269,7 +269,13 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     onToast(`${displayCourseName(selectedCourse.course.name)} ${startHole}번 홀로 라운드를 시작합니다`);
     setPendingWarnings(null);
     onClose();
-    onStart();
+    // RC4 P0 Round Start Deadlock fix (Issue 1-A) — hand the round we just
+    // built to the navigation step. App.handleStartRound() uses it instead
+    // of the stale `round` in its render closure, so the host enters the
+    // Round screen immediately instead of blocking itself on the demo-seed
+    // guard. Guests are unaffected: they navigate via the round_started
+    // effect in App.jsx, never through this call.
+    onStart(result.round);
   }
 
   function handleStartTap() {
@@ -336,40 +342,85 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
           </button>
         )}
 
-        {/* 동반자 초대 · 참여 상태 (§4) */}
-        <div className="ft-room-section">
-          <span className="ft-pin-position-label">동반자 초대</span>
-          <p className="ft-pin-position-hint">
-            <strong>Preview Simulation</strong>
-            <br />
-            탭하여 참여 상태를 시뮬레이션합니다.
-            <br />
-            실제 초대 알림은 아직 구현되지 않았습니다.
-          </p>
-          {isDevMode && <p className="ft-pin-position-hint">DEV: 탭하여 상태 순환(초대→참여→나감)</p>}
-          <div className="ft-room-member-list">
-            {RECENT_COMPANIONS.map((companion) => {
-              const member = room.members.find((m) => m.userId === companion.id);
-              const label = member ? JOIN_STATUS_LABEL[member.joinStatus] ?? member.joinStatus : "미초대";
-              const isJoined = member?.joinStatus === "joined";
-              return (
-                <button
-                  key={companion.id}
-                  type="button"
-                  className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
-                  onClick={() => cycleCompanionStatus(companion)}
-                >
-                  <span className="ft-room-member-name">{companion.name}</span>
-                  <span className="ft-room-member-status">
-                    {isJoined && <Check size={11} strokeWidth={3} />}
-                    {label}
-                    {isJoined ? ` · ${member.connectionStatus === "online" ? "연결됨" : "연결 끊김"}` : ""}
-                  </span>
-                </button>
-              );
-            })}
+        {/* 동반자 초대 · 참여 상태 (§4) — DEMO-ONLY.
+            RC4 Issue 2 & 3 (Team Connection / Preview Simulation): this
+            block is the obsolete demo-simulation invite workflow. In a
+            REAL network room (networkCommunicationEnabled === true) the
+            overlay must show only the real room state (Room ID / real
+            참가자 / 연결 상태 / 마이크 / 라운드 시작·Host 대기 / 팀 연결
+            종료 — all rendered elsewhere in this overlay), so this Preview
+            Simulation section is isolated to non-network DEV builds. */}
+        {!networkCommunicationEnabled && isDevMode && (
+          <div className="ft-room-section">
+            <span className="ft-pin-position-label">동반자 초대</span>
+            <p className="ft-pin-position-hint">
+              <strong>Preview Simulation</strong>
+              <br />
+              탭하여 참여 상태를 시뮬레이션합니다.
+              <br />
+              실제 초대 알림은 아직 구현되지 않았습니다.
+            </p>
+            <p className="ft-pin-position-hint">DEV: 탭하여 상태 순환(초대→참여→나감)</p>
+            <div className="ft-room-member-list">
+              {RECENT_COMPANIONS.map((companion) => {
+                const member = room.members.find((m) => m.userId === companion.id);
+                const label = member ? JOIN_STATUS_LABEL[member.joinStatus] ?? member.joinStatus : "미초대";
+                const isJoined = member?.joinStatus === "joined";
+                return (
+                  <button
+                    key={companion.id}
+                    type="button"
+                    className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
+                    onClick={() => cycleCompanionStatus(companion)}
+                  >
+                    <span className="ft-room-member-name">{companion.name}</span>
+                    <span className="ft-room-member-status">
+                      {isJoined && <Check size={11} strokeWidth={3} />}
+                      {label}
+                      {isJoined ? ` · ${member.connectionStatus === "online" ? "연결됨" : "연결 끊김"}` : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* RC4 Issue 2 — real network room: show the actual participants
+            (server-authoritative, mirrored into room.members by App.jsx)
+            instead of the demo invite list. Self is excluded to match the
+            existing 참가자-list policy (Issue 6, unchanged). */}
+        {networkCommunicationEnabled && (
+          <div className="ft-room-section">
+            <span className="ft-pin-position-label">참가자</span>
+            <div className="ft-room-member-list">
+              {room.members
+                .filter((m) => m.userId !== identity.userId)
+                .map((m) => {
+                  const isJoined = m.joinStatus === "joined";
+                  const isHost = m.userId === room.hostUserId;
+                  return (
+                    <div
+                      key={m.userId}
+                      className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
+                    >
+                      <span className="ft-room-member-name">
+                        {m.displayName}
+                        {isHost ? " · Host" : ""}
+                      </span>
+                      <span className="ft-room-member-status">
+                        {isJoined && <Check size={11} strokeWidth={3} />}
+                        {m.connectionStatus === "online" ? "연결됨" : "연결 끊김"}
+                      </span>
+                    </div>
+                  );
+                })}
+              {room.members.filter((m) => m.userId !== identity.userId).length === 0 && (
+                <p className="ft-pin-position-hint">아직 참가자가 없습니다. 초대 링크를 공유하세요.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* PTT 테스트 상태 (§4/§5, DEV 시뮬레이션) + 실제 마이크 준비(§6-A) */}
         {joined.length > 0 && (

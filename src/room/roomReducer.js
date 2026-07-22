@@ -20,6 +20,7 @@ import {
   ROOM_MEMBER_SET_CONNECTION_STATUS,
   ROOM_MEMBER_SET_PTT_TEST_STATUS,
   ROOM_MARK_IN_ROUND,
+  ROOM_SET_HOST,
   ROOM_RESET,
 } from "./roomActions.js";
 
@@ -236,6 +237,26 @@ export function roomReducer(state, action) {
       return {
         ...state,
         room: { ...state.room, status: "in_round", updatedAt: nowIso() },
+      };
+    }
+
+    case ROOM_SET_HOST: {
+      if (!state.room) return state;
+      const { hostUserId } = action.payload;
+      // Idempotent — no-op if the host is unchanged, so a redundant
+      // host_changed / room_joined echo never churns state or roles.
+      if (!hostUserId || state.room.hostUserId === hostUserId) return state;
+      return {
+        ...state,
+        room: {
+          ...state.room,
+          hostUserId,
+          members: state.room.members.map((m) => ({
+            ...m,
+            role: m.userId === hostUserId ? "host" : m.role === "host" ? "member" : m.role,
+          })),
+          updatedAt: nowIso(),
+        },
       };
     }
 

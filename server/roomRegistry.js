@@ -17,13 +17,17 @@
 
 export class RoomRegistry {
   constructor() {
-    /** roomId -> { members: Map<userId, {ws, displayName, deviceSessionId}>, hostUserId: string|null } */
+    /** roomId -> {
+     *    members: Map<userId, {ws, displayName, deviceSessionId, joinSeq}>,
+     *    hostUserId: string|null,
+     *    seq: number   // monotonic counter, source of deterministic seniority
+     *  } */
     this.rooms = new Map();
   }
 
   _getOrCreateRoom(roomId) {
     if (!this.rooms.has(roomId)) {
-      this.rooms.set(roomId, { members: new Map(), hostUserId: null });
+      this.rooms.set(roomId, { members: new Map(), hostUserId: null, seq: 0 });
     }
     return this.rooms.get(roomId);
   }
@@ -37,7 +41,12 @@ export class RoomRegistry {
   addMember(roomId, userId, ws, { displayName, deviceSessionId }) {
     const room = this._getOrCreateRoom(roomId);
     const previous = room.members.get(userId) ?? null;
-    room.members.set(userId, { ws, displayName, deviceSessionId });
+    // RC4 Issue 4 (Host transfer) — seniority must be STABLE across a
+    // reconnect: a member who briefly drops and rejoins keeps their
+    // original joinSeq, so a reconnect never reshuffles who is "longest
+    // connected". Only a genuinely new userId gets a fresh, larger seq.
+    const joinSeq = previous ? previous.joinSeq : room.seq++;
+    room.members.set(userId, { ws, displayName, deviceSessionId, joinSeq });
     if (!room.hostUserId) room.hostUserId = userId;
     return { previous, hostUserId: room.hostUserId };
   }
@@ -93,6 +102,40 @@ export class RoomRegistry {
 
   isHost(roomId, userId) {
     return this.getHostUserId(roomId) === userId;
+  }
+
+  /** RC4 Issue 4 (Host transfer) — deterministically pick the successor
+   * host: the remaining member with the smallest joinSeq (longest
+   * continuously-known member), with userId as a tiebreak that can never
+   * actually tie (joinSeq is unique per room) but keeps the ordering
+   * total and stable. Returns null if the room has no members left. */
+  pickSuccessorHost(roomId) {
+    const room = this.rooms.get(roomId);
+    if (!room || room.members.size === 0) return null;
+    let best = null;
+    for (const [userId, m] of room.members.entries()) {
+      if (
+        best === null ||
+        m.joinSeq < best.joinSeq ||
+        (m.joinSeq === best.joinSeq && userId < best.userId)
+      ) {
+        best = { userId, joinSeq: m.joinSeq };
+      }
+    }
+    return best ? best.userId : null;
+  }
+
+  /** RC4 Issue 4 — commit a host change. Idempotent: setting the host to
+   * the current host is a no-op that reports changed:false, so callers
+   * can safely call this without first checking. Refuses to set a host
+   * that isn't a current member. */
+  setHost(roomId, userId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return { changed: false, hostUserId: null };
+    if (!room.members.has(userId)) return { changed: false, hostUserId: room.hostUserId };
+    if (room.hostUserId === userId) return { changed: false, hostUserId: userId };
+    room.hostUserId = userId;
+    return { changed: true, hostUserId: userId };
   }
 
   getSocket(roomId, userId) {

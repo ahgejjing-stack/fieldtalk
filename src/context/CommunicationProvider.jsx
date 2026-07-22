@@ -195,6 +195,12 @@ export function CommunicationProvider({
       actualTargetUserIds: state.actualTargetUserIds ?? [],
       members: state.members ?? [],
       remoteInputLevel: state.remoteInputLevel ?? 0,
+      // RC4 Issue 4 (Host transfer)
+      hostUserId: state.hostUserId ?? null,
+      hostChangedEvent: state.hostChangedEvent ?? null,
+      clearHostChangedEvent: clientRef.current.clearHostChangedEvent
+        ? () => clientRef.current.clearHostChangedEvent()
+        : null,
       roundStartedPayload: state.roundStartedPayload ?? null,
       sendRoundStart: clientRef.current.sendRoundStart ? (payload) => clientRef.current.sendRoundStart(payload) : null,
       clearRoundStartedPayload: clientRef.current.clearRoundStartedPayload

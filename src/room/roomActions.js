@@ -19,6 +19,7 @@ export const ROOM_MEMBER_LEAVE = "ROOM_MEMBER_LEAVE";
 export const ROOM_MEMBER_SET_CONNECTION_STATUS = "ROOM_MEMBER_SET_CONNECTION_STATUS";
 export const ROOM_MEMBER_SET_PTT_TEST_STATUS = "ROOM_MEMBER_SET_PTT_TEST_STATUS";
 export const ROOM_MARK_IN_ROUND = "ROOM_MARK_IN_ROUND";
+export const ROOM_SET_HOST = "ROOM_SET_HOST";
 export const ROOM_RESET = "ROOM_RESET";
 
 /** Creates a new Room with the host as its first member, already joined
@@ -80,6 +81,16 @@ export const roomMemberSetPttTestStatus = (userId, pttTestStatus) => ({
 export const roomMarkInRound = () => ({
   type: ROOM_MARK_IN_ROUND,
   payload: {},
+});
+
+/** RC4 Issue 4 (Host transfer) — the server is the source of truth for
+ * who is host. This mirrors a server host_changed / room_joined hostUserId
+ * into local Room state so the UI (라운드 시작 권한, "· Host" badge) and
+ * the round-start/hole-advance gates follow the new host. Also updates the
+ * affected members' `role` fields so anything keyed on role stays coherent. */
+export const roomSetHost = (hostUserId) => ({
+  type: ROOM_SET_HOST,
+  payload: { hostUserId },
 });
 
 export const roomReset = () => ({

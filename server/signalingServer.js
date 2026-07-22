@@ -24,9 +24,58 @@ import { PttLockManager, DEFAULT_LEASE_DURATION_MS } from "./pttLockManager.js";
 const PORT = Number(process.env.PORT) || Number(process.env.SIGNALING_PORT) || 8787;
 const LEASE_DURATION_MS = Number(process.env.PTT_LEASE_DURATION_MS) || DEFAULT_LEASE_DURATION_MS;
 
-export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DURATION_MS } = {}) {
+// RC4 Issue 4 (Host transfer) — how long the server waits after the
+// HOST's socket drops before promoting a successor. This grace window is
+// what reconciles "auto host transfer" with RC4 Session Recovery: a host
+// who merely backgrounds the app / suffers a brief network blip and
+// reconnects within the window keeps host; only a host who is really gone
+// for the whole window is replaced. Configurable, defaults to 12s.
+const HOST_TRANSFER_GRACE_MS = Number(process.env.HOST_TRANSFER_GRACE_MS) || 12000;
+
+export function createSignalingServer({
+  port = PORT,
+  leaseDurationMs = LEASE_DURATION_MS,
+  hostTransferGraceMs = HOST_TRANSFER_GRACE_MS,
+} = {}) {
   const registry = new RoomRegistry();
   const lockManager = new PttLockManager({ leaseDurationMs });
+
+  // RC4 Issue 4 — pending host-transfer timers, keyed by roomId. A timer
+  // exists only while a room's host is within its post-disconnect grace
+  // window. Cleared if the host reconnects, or when it fires.
+  const hostTransferTimers = new Map();
+
+  function cancelHostTransfer(roomId) {
+    const timer = hostTransferTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      hostTransferTimers.delete(roomId);
+    }
+  }
+
+  /** RC4 Issue 4 — promote a deterministic successor host and tell the
+   * room. Called only when the grace window elapses with the old host
+   * still absent. Safe if the room emptied in the meantime (no-op). */
+  function performHostTransfer(roomId, previousHostUserId) {
+    hostTransferTimers.delete(roomId);
+    // If the old host came back and is host again, or the room is gone,
+    // there is nothing to do.
+    if (!registry.roomExists(roomId)) return;
+    if (registry.getHostUserId(roomId) !== previousHostUserId) return; // already changed
+    if (registry.isMember(roomId, previousHostUserId)) return; // host reconnected in time
+    const successor = registry.pickSuccessorHost(roomId);
+    if (!successor) return;
+    const { changed, hostUserId } = registry.setHost(roomId, successor);
+    if (!changed) return;
+    log("[HOST TRANSFER]", { roomId, previousHostUserId, newHostUserId: hostUserId });
+    registry.broadcast(roomId, {
+      type: "host_changed",
+      roomId,
+      hostUserId,
+      previousHostUserId,
+      reason: "host_disconnected",
+    });
+  }
 
   function log(...args) {
     // §13 deliverable 11 "서버 로그 예시" — plain console output,
@@ -84,20 +133,35 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
           registry.addMember(roomId, userId, ws, { displayName, deviceSessionId });
           boundRoomId = roomId;
           boundUserId = userId;
+          // RC4 Issue 4 — if the reconnecting user IS the current host and
+          // a transfer grace timer was pending for this room, they made it
+          // back in time: cancel the transfer, host stays put. (If a
+          // transfer already fired, this user is no longer host and there
+          // is no timer to cancel — see "이전 Host가 recovery로 돌아왔을
+          // 때 Host 권한을 자동으로 되찾지 않음".)
+          if (registry.isHost(roomId, userId)) {
+            cancelHostTransfer(roomId);
+          }
+          const hostUserId = registry.getHostUserId(roomId);
           const members = registry.getMembers(roomId);
-          log("[ROOM JOIN SUCCESS]", { roomId, userId, participants: members.length });
+          log("[ROOM JOIN SUCCESS]", { roomId, userId, participants: members.length, hostUserId });
 
           ws.send(
             JSON.stringify({
               type: "room_joined",
               roomId,
               members,
+              hostUserId, // RC4 Issue 4 — clients learn the authoritative host on join
               currentSpeakerUserId: lockManager.getCurrentSpeaker(roomId),
             })
           );
           const broadcastCount = Math.max(members.length - 1, 0);
           log("[PEER JOIN BROADCAST]", { roomId, from: userId, recipients: broadcastCount });
-          registry.broadcast(roomId, { type: "member_online", roomId, userId, displayName }, userId);
+          registry.broadcast(
+            roomId,
+            { type: "member_online", roomId, userId, displayName, hostUserId },
+            userId
+          );
           break;
         }
 
@@ -263,6 +327,49 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
           break;
         }
 
+        case "room_leave": {
+          // RC4 Issue 4 — a DELIBERATE leave. Unlike a socket drop, this
+          // is never coming back, so if the leaver is host we transfer
+          // immediately (no grace window). We remove membership here so
+          // the successor pick excludes the leaver; the subsequent socket
+          // close then finds nothing to clean up (removeConnection returns
+          // null) and, crucially, sees wasHost=false so it won't also arm
+          // a grace timer.
+          const { roomId } = msg;
+          if (!boundRoomId || !boundUserId || roomId !== boundRoomId) return;
+          const leaverWasHost = registry.isHost(roomId, boundUserId);
+          log("[ROOM LEAVE]", { roomId, userId: boundUserId, leaverWasHost });
+          const wasSpeaker = lockManager.releaseIfHeldBy(roomId, boundUserId);
+          registry.removeMember(roomId, boundUserId);
+          if (wasSpeaker) {
+            registry.broadcast(roomId, { type: "speaker_changed", roomId, speakerUserId: null, targetUserIds: [] });
+          }
+          registry.broadcast(roomId, { type: "member_offline", roomId, userId: boundUserId });
+          if (leaverWasHost && registry.roomExists(roomId)) {
+            cancelHostTransfer(roomId); // supersede any pending grace timer
+            const successor = registry.pickSuccessorHost(roomId);
+            if (successor) {
+              const { changed, hostUserId } = registry.setHost(roomId, successor);
+              if (changed) {
+                log("[HOST TRANSFER — EXPLICIT LEAVE]", { roomId, previousHostUserId: boundUserId, newHostUserId: hostUserId });
+                registry.broadcast(roomId, {
+                  type: "host_changed",
+                  roomId,
+                  hostUserId,
+                  previousHostUserId: boundUserId,
+                  reason: "host_left",
+                });
+              }
+            }
+          }
+          // Prevent the upcoming socket close from double-processing this
+          // user (membership is already gone). Unbind so ws.on("close")
+          // early-returns.
+          boundRoomId = null;
+          boundUserId = null;
+          break;
+        }
+
         case "connection_state": {
           // Informational relay only — clients use this to show hints
           // like "상대방 연결 불안정", never a control message the
@@ -279,17 +386,44 @@ export function createSignalingServer({ port = PORT, leaseDurationMs = LEASE_DUR
     });
 
     ws.on("close", () => {
+      // RC4 Issue 4 — capture whether this socket was the host BEFORE we
+      // remove it, and whether this exact socket is still the registered
+      // one for that user (a newer reconnect may have replaced it under
+      // last-connected-wins; if so, this stale close must NOT trigger a
+      // transfer).
+      let wasHost = false;
+      let staleReplacedSocket = false;
+      if (boundRoomId && boundUserId) {
+        wasHost = registry.isHost(boundRoomId, boundUserId);
+        const currentSocket = registry.getSocket(boundRoomId, boundUserId);
+        staleReplacedSocket = currentSocket !== null && currentSocket !== ws;
+      }
+
       const found = registry.removeConnection(ws) ?? (boundRoomId && boundUserId ? { roomId: boundRoomId, userId: boundUserId } : null);
       if (!found) return;
       const { roomId, userId } = found;
       const remainingParticipants = registry.getMembers(roomId)?.length ?? 0;
-      log("[DISCONNECT]", { roomId, userId, remainingParticipants });
+      log("[DISCONNECT]", { roomId, userId, remainingParticipants, wasHost });
 
       const wasSpeaker = lockManager.releaseIfHeldBy(roomId, userId);
       if (wasSpeaker) {
         registry.broadcast(roomId, { type: "speaker_changed", roomId, speakerUserId: null, targetUserIds: [] });
       }
       registry.broadcast(roomId, { type: "member_offline", roomId, userId });
+
+      // RC4 Issue 4 (Host transfer with grace period) — only arm a
+      // transfer if the HOST genuinely left and still has members to
+      // inherit the room. A stale/replaced socket close is ignored (the
+      // user is still connected on a newer socket). removeConnection above
+      // already deleted the room entirely if it was the last member, so
+      // roomExists() guards the "empty room" case.
+      if (wasHost && !staleReplacedSocket && registry.roomExists(roomId)) {
+        cancelHostTransfer(roomId); // never stack two timers for one room
+        log("[HOST DISCONNECTED — GRACE START]", { roomId, hostUserId: userId, graceMs: hostTransferGraceMs });
+        const timer = setTimeout(() => performHostTransfer(roomId, userId), hostTransferGraceMs);
+        if (typeof timer.unref === "function") timer.unref(); // don't keep the process alive on this timer alone
+        hostTransferTimers.set(roomId, timer);
+      }
     });
   });
 

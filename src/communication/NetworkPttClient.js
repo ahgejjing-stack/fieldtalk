@@ -90,6 +90,11 @@ export class NetworkPttClient extends PttClient {
       actualTargetUserIds: [],
       members: [],
       remoteInputLevel: 0,
+      // RC4 Issue 4 (Host transfer) — server-authoritative current host,
+      // learned on room_joined and updated by host_changed. `hostChangedEvent`
+      // is a one-shot signal the UI layer consumes to show a toast.
+      hostUserId: null,
+      hostChangedEvent: null,
       roundStartedPayload: null, // Runtime Identity v0.4 §9
       reconnectEvent: null, // RC1-WEEK6 §1.8 — one-shot signal for the UI toast layer: "reconnecting" | "reconnected" | "give_up". Cleared by the consumer.
       // RC4 P1-2 — Debug Overlay diagnostics for the "remoteSignalDetected
@@ -395,6 +400,10 @@ export class NetworkPttClient extends PttClient {
         this._setState({
           connectionState: hasOtherMembers ? "media_reconnecting" : "connected",
           members,
+          // RC4 Issue 4 — learn the authoritative host on (re)join. On a
+          // reconnect AFTER a transfer, this is how the old host discovers
+          // it is no longer host and never auto-reclaims the role.
+          hostUserId: msg.hostUserId ?? this.state.hostUserId ?? null,
         });
         this._reconcileMembers(members); // Priority 1/3 — rebuild peer connections
         finish({ ok: true });
@@ -515,6 +524,11 @@ export class NetworkPttClient extends PttClient {
     if (this.state.status === COMMUNICATION_STATES.TRANSMITTING) {
       this.signaling.releasePtt();
     }
+    // RC4 Issue 4 — tell the server this is a deliberate leave so, if we
+    // were host, it transfers ownership immediately instead of waiting out
+    // the disconnect grace window. Sent before close() while the socket is
+    // still open; harmless no-op if already closed.
+    this.signaling.leaveRoom?.();
     this._cleanupConnection("leave_room");
     this.signaling.close();
     this._reconnectAttempt = 0;
@@ -655,6 +669,21 @@ export class NetworkPttClient extends PttClient {
     });
     this.signaling.on("round_start_denied", (msg) => {
       this._setState({ lastError: `round_start_denied:${msg.reason}` });
+    });
+    this.signaling.on("host_changed", (msg) => {
+      // RC4 Issue 4 (Host transfer) — the server promoted a new host.
+      // Surface it via state so App.jsx mirrors it into the Room Engine
+      // (round-start / hole-advance gates and the "· Host" badge follow).
+      // hostChangedEvent is a one-shot for the toast layer.
+      this._setState({
+        hostUserId: msg.hostUserId ?? null,
+        hostChangedEvent: {
+          hostUserId: msg.hostUserId ?? null,
+          previousHostUserId: msg.previousHostUserId ?? null,
+          reason: msg.reason ?? null,
+          at: Date.now(),
+        },
+      });
     });
 
     this.signaling.on("connection_state", () => {
@@ -1091,6 +1120,11 @@ export class NetworkPttClient extends PttClient {
    * prevents re-triggering navigation on every subsequent re-render. */
   clearRoundStartedPayload() {
     this._setState({ roundStartedPayload: null });
+  }
+
+  /** RC4 Issue 4 — one-shot consumer for the host-changed toast signal. */
+  clearHostChangedEvent() {
+    this._setState({ hostChangedEvent: null });
   }
 
   /** RC1 Networking Recovery — actually sends a distance share to the

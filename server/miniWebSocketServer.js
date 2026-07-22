@@ -208,4 +208,15 @@ export class MiniWebSocketServer extends EventEmitter {
     }
     this.emit("connection", ws, req);
   }
+
+  /** Stop accepting new connections and release the bound port. Only the
+   * self-created http server is owned here; an injected `server` is the
+   * caller's to close. Used for clean test teardown and graceful shutdown. */
+  close() {
+    try {
+      this.server.close?.();
+    } catch (err) {
+      // best-effort — a never-listened server throws; safe to ignore
+    }
+  }
 }

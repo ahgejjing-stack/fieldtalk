@@ -180,18 +180,39 @@ function AppShell() {
   // seed" is a precise, non-heuristic check.
   const isDemoSeedRound = round.id === "round_demo_001";
 
-  const handleStartRound = () => {
+  // RC4 P0 Round Start Deadlock fix (Issue 1-A) — `startedRound` is the
+  // Round object the HOST just built synchronously in
+  // RoomOverlay.runStart(). When present it is the source of truth for
+  // THIS transition, overriding the `round` captured in this render's
+  // closure. Root cause of the deadlock: runStart() dispatches
+  // roundStartFromRoom() (round.id becomes `round_<ts>`) and then calls
+  // onStart() in the SAME tick, before React commits that dispatch — so
+  // the `round`/`isDemoSeedRound` read here was still the stale demo
+  // seed, and the host fell into the "wait for the host" guard below and
+  // blocked ITSELF. Passing the freshly-built round sidesteps the stale
+  // closure entirely. The guard still protects a GUEST who taps before
+  // round_started has arrived (startedRound is undefined for them).
+  const handleStartRound = (startedRound) => {
+    const startingAsHost = !!startedRound;
+    // Effective view of "are we still on the demo seed" for THIS call:
+    // the host who just built a real round is, by definition, not.
+    const effectiveIsDemoSeedRound = startingAsHost
+      ? startedRound.id === "round_demo_001"
+      : isDemoSeedRound;
+
     // RC4 P0-2/P0-3 — in network mode, entering the round must show the
-    // REAL network round, never the demo seed. If the host's round_started
-    // broadcast hasn't landed yet (or, on the host, runStart() hasn't
-    // built it yet), do NOT fall through to the seed round — that is
-    // exactly the "both devices revert to 재식/재근/광천/해란" symptom.
-    // Wait for the real round instead of showing demo players.
-    if (networkCommunicationEnabled && isDemoSeedRound) {
+    // REAL network round, never the demo seed. A GUEST who taps before
+    // the host's round_started broadcast lands must wait rather than fall
+    // through to the seed round (the "both devices revert to
+    // 재식/재근/광천/해란" symptom). A HOST who just started never hits
+    // this branch, because startedRound is a real round_<ts>.
+    if (networkCommunicationEnabled && effectiveIsDemoSeedRound) {
       showToast("Host가 라운드를 시작하면 자동으로 입장합니다");
       return;
     }
-    if (round.status !== "active") {
+    // The host already dispatched roundStartFromRoom() in runStart(); only
+    // the non-host / local path needs to kick a plain roundStart() here.
+    if (!startingAsHost && round.status !== "active") {
       dispatch(actions.roundStart());
     }
     setScreen("round");
@@ -263,6 +284,34 @@ function AppShell() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communication.members, networkCommunicationEnabled, room?.id]);
+
+  // RC4 Issue 4 (Host transfer) — mirror the server-authoritative host
+  // into the local Room Engine whenever it changes. This is what makes
+  // the round-start / hole-advance permission (server-enforced) match
+  // what the UI offers, and updates the "· Host" badge. Idempotent in the
+  // reducer, so a redundant echo is a no-op. Deliberately depends only on
+  // communication.hostUserId (not room), so it never fights the member
+  // mirror effect below.
+  useEffect(() => {
+    if (!networkCommunicationEnabled || !room) return;
+    const serverHost = communication.hostUserId;
+    if (!serverHost) return;
+    if (room.hostUserId !== serverHost) {
+      roomDispatch(roomActions.roomSetHost(serverHost));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.hostUserId, networkCommunicationEnabled, room?.hostUserId]);
+
+  // RC4 Issue 4 — one-shot toast when host ownership transfers, so the
+  // room can see who is driving now. Consumed immediately.
+  useEffect(() => {
+    const event = communication.hostChangedEvent;
+    if (!event) return;
+    const amNewHost = event.hostUserId === identity.userId;
+    showToast(amNewHost ? "이제 내가 Host입니다" : "Host가 변경되었습니다");
+    communication.clearHostChangedEvent?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communication.hostChangedEvent]);
 
   // RC1-WEEK6 §1.8 — reconnection toasts, at AppShell level (not inside
   // RoomOverlay) specifically because a real disconnect is most likely
