@@ -76,16 +76,53 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   const [pendingWarnings, setPendingWarnings] = useState(null); // null = no confirm modal showing
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // RC4 방 나가기 확인 모달
 
+  // RC4 P0 — network-mode safety net. A real device showed the app sitting
+  // with a live Room but networkCommunicationEnabled=false (PO DIAG
+  // networkEnabled=false), which silently breaks EVERYTHING room-related:
+  // no network round is built, the server roster never syncs, and
+  // room_leave is never sent (so "방 나가기" doesn't really leave). If the
+  // room overlay is open and we have a room, network mode must be on —
+  // re-assert it here rather than depending on whichever earlier path was
+  // supposed to set it. The [NETWORK MODE] log names the transition.
+  useEffect(() => {
+    if (!isOpen || !room) return;
+    if (!networkCommunicationEnabled) {
+      // eslint-disable-next-line no-console
+      console.log("[NETWORK MODE] re-asserting ON — room exists but network was off", `roomCode=${room.code}`);
+      setNetworkCommunicationEnabled(true);
+    }
+  }, [isOpen, room, networkCommunicationEnabled, setNetworkCommunicationEnabled]);
+
   useEffect(() => {
     if (!isOpen) return;
     courseReferenceService.setProvider(providerChoice === "B" ? courseProviderB : courseProviderA);
     let cancelled = false;
-    courseReferenceService.listAvailableCourses().then((list) => {
-      if (cancelled) return;
-      setCourses(list);
-      setSelectedCourseId(list[0]?.id ?? null);
-      setStartHole(1);
-    });
+    // RC4 P0-1 diagnostic — if this fetch fails or returns empty,
+    // `selectedCourse` stays null and the ROUND START button is
+    // permanently `disabled`, so tapping it does literally nothing. That
+    // presents exactly as "Room 상태에 진입한 순간부터 Round Start 경로가
+    //막혀 있다". Log both outcomes so a device test can see which it is.
+    courseReferenceService
+      .listAvailableCourses()
+      .then((list) => {
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.log("[COURSE LOAD] ok", `count=${list?.length ?? 0}`, `firstId=${list?.[0]?.id ?? "none"}`, `provider=${providerChoice}`);
+        setCourses(list ?? []);
+        setSelectedCourseId(list?.[0]?.id ?? null);
+        setStartHole(1);
+        if (!list || list.length === 0) {
+          onToast?.("코스를 불러오지 못했습니다. 다시 시도해주세요.");
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.error("[COURSE LOAD] FAILED", err);
+        setCourses([]);
+        setSelectedCourseId(null);
+        onToast?.("코스를 불러오지 못했습니다. 다시 시도해주세요.");
+      });
     return () => {
       cancelled = true;
     };
@@ -282,6 +319,17 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   }
 
   function handleStartTap() {
+    // RC4 P0-1 — explicit, visible reason instead of a dead button.
+    // eslint-disable-next-line no-console
+    console.log("[ROOM OVERLAY] handleStartTap ENTER", `hasCourse=${!!selectedCourse}`, `coursesLoaded=${courses.length}`, `startHole=${startHole}`, `roomCode=${room?.code}`, `networkEnabled=${networkCommunicationEnabled}`);
+    if (!selectedCourse) {
+      onToast(
+        courses.length === 0
+          ? "코스를 불러오지 못했습니다. 화면을 닫았다 다시 열어주세요."
+          : "코스를 먼저 선택해주세요."
+      );
+      return;
+    }
     const warnings = selectRoomWarnings(room, {
       courseSelected: !!selectedCourse,
       startHoleSelected: typeof startHole === "number",
@@ -317,6 +365,8 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   // Network mode is even on). All three must be torn down together or
   // some piece would silently survive and confuse the next "팀 연결".
   function handleLeaveRoom() {
+    // eslint-disable-next-line no-console
+    console.log("[LEAVE ROOM] start", `roomCode=${room?.code}`, `networkEnabled=${networkCommunicationEnabled}`, `hasCommLeave=${!!communication.leaveRoom}`);
     communication.leaveRoom?.();
     dispatch(actions.roomReset());
     // RC4 Session Recovery — explicit leave removes the recoverable room:
@@ -343,7 +393,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
       <div className="ft-gallery-sheet ft-room-sheet">
         <div className="ft-gallery-sheet-head">
           <span className="ft-gallery-sheet-title">
-            팀 연결 · Room {room.code}
+            Room {room.code} · 라운드 준비
           </span>
           <button type="button" className="ft-icon-btn" onClick={onClose} aria-label="닫기">
             <X size={16} strokeWidth={2.2} />
@@ -664,7 +714,12 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
           </div>
         )}
 
-        <button type="button" className="ft-hole-complete-btn" onClick={handleStartTap} disabled={!selectedCourse}>
+        {/* RC4 P0-1 — the button must NEVER be silently dead. It used to be
+            `disabled={!selectedCourse}`, so if the course list failed to
+            load (or was still loading) a tap did literally nothing, which
+            reads as "Room에 들어간 순간부터 Round Start가 막혔다". Now it is
+            always tappable and handleStartTap explains what's missing. */}
+        <button type="button" className="ft-hole-complete-btn" onClick={handleStartTap}>
           ROUND START
         </button>
       </div>

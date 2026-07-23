@@ -25,6 +25,7 @@ import DistanceCard from "./DistanceCard.jsx";
 import GalleryPanel from "./GalleryPanel.jsx";
 import ScoreCard from "./ScoreCard.jsx";
 import PoDiagnosticPanel from "./PoDiagnosticPanel.jsx"; // RC4 TEMPORARY — remove after device verification
+import { RC4_BUILD_STAMP } from "../config/buildStamp.js";
 
 // 8-point compass — "Compact First": a single arrow + 2-letter label is
 // enough context for a golfer glancing at the header, no need to spell out
@@ -325,6 +326,9 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
           players={players}
           loadingGate={true}
           networkCommunicationEnabled={networkCommunicationEnabled}
+          buildStamp={RC4_BUILD_STAMP}
+          roomCode={room?.code}
+          roomStatus={room?.status}
         />
         <div className="ft-round-scroll">
           <div className="ft-compact-header">
@@ -348,6 +352,9 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
         players={players}
         loadingGate={false}
         networkCommunicationEnabled={networkCommunicationEnabled}
+        buildStamp={RC4_BUILD_STAMP}
+        roomCode={room?.code}
+        roomStatus={room?.status}
       />
       {displaySpeakerName && (
         <div className="ft-live-badge">
@@ -360,8 +367,16 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
         {/* Compact header — "약 절반 수준" target: one icon row + two text
             lines, no big hero hole number, no decorative artwork. */}
         <div className="ft-compact-header">
-          <button className="ft-icon-btn" onClick={() => setShowExitSheet(true)} aria-label="메뉴">
-            <ChevronLeft size={18} strokeWidth={2.2} />
+          <button
+            className="ft-icon-btn"
+            onClick={() => setShowExitSheet(true)}
+            aria-label="라운드 메뉴"
+            // RC4 UI — Apple HIG minimum touch target (44x44pt). The default
+            // icon button was too small to hit reliably on a real phone,
+            // especially with gloves / mid-round.
+            style={{ minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <ChevronLeft size={22} strokeWidth={2.2} />
           </button>
           <div className="ft-compact-header-info">
             <div className="ft-compact-header-line1">
@@ -530,24 +545,6 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
 
       <GalleryPanel isOpen={galleryOpen} onClose={() => setGalleryOpen(false)} onToast={onToast} />
 
-      {showEndRoundConfirm && (
-        <div className="ft-room-warning-confirm">
-          <p>
-            라운드를 종료할까요?
-            <br />
-            지금까지의 스코어가 저장되고 홈으로 돌아갑니다.
-          </p>
-          <div className="ft-pin-position-pills">
-            <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(false)}>
-              계속 플레이
-            </button>
-            <button className="ft-pin-pill is-active" onClick={handleEndRoundConfirmed}>
-              종료
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* RC4 — 라운드 화면 나가기 액션 시트. 세 동작을 명시적으로 분리한다:
           홈으로 이동(navigation only) / 방 나가기(room teardown) /
           라운드 종료(roundComplete, Room 유지). 같은 의미로 처리되지 않는다. */}
@@ -565,10 +562,28 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
               <button className="ft-pin-pill" onClick={handleGoHomeFromSheet}>
                 홈으로 이동 (라운드 유지)
               </button>
-              <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(true)}>
+              <button
+                className="ft-pin-pill"
+                onClick={() => {
+                  // RC4 P0-3 — CLOSE the sheet first. The sheet is a
+                  // full-screen ft-gallery-overlay rendered AFTER these
+                  // dialogs, so leaving it open completely covers the
+                  // confirm dialog: the tap looked like "no response", and
+                  // both dialogs appeared at once only when the sheet was
+                  // finally dismissed.
+                  setShowExitSheet(false);
+                  setShowEndRoundConfirm(true);
+                }}
+              >
                 라운드 종료
               </button>
-              <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(true)}>
+              <button
+                className="ft-pin-pill"
+                onClick={() => {
+                  setShowExitSheet(false);
+                  setShowLeaveConfirm(true);
+                }}
+              >
                 방 나가기
               </button>
               <button className="ft-pin-pill" onClick={() => setShowExitSheet(false)}>
@@ -579,27 +594,55 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
         </div>
       )}
 
-      {/* RC4 — 방 나가기 확인 (Host/참가자 구분). */}
-      {showLeaveConfirm && (
-        <div className="ft-room-warning-confirm">
-          <p>
-            {amHost ? (
-              <>
-                방을 나가면 Host 권한이 다른 참가자에게 이전됩니다.
-                <br />
-                참가자가 없으면 방이 종료됩니다.
-              </>
-            ) : (
-              <>방에서 나가시겠습니까?</>
-            )}
-          </p>
-          <div className="ft-pin-position-pills">
-            <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(false)}>
-              취소
-            </button>
-            <button className="ft-pin-pill is-active" onClick={handleLeaveRoomConfirmed}>
-              방 나가기
-            </button>
+      {/* RC4 P0-3 — 확인 다이얼로그는 액션 시트보다 "뒤에" 렌더되어야
+          시트에 가려지지 않는다(이전 버그: 시트가 full-screen overlay라
+          다이얼로그를 완전히 덮어 "눌러도 반응 없음"으로 보였고, 시트를
+          닫는 순간 두 개가 동시에 나타났다). 또한 두 다이얼로그는 상호
+          배타적으로 렌더해 절대 동시에 뜨지 않는다. */}
+      {showEndRoundConfirm && !showExitSheet && (
+        <div className="ft-gallery-overlay">
+          <div className="ft-gallery-scrim" onClick={() => setShowEndRoundConfirm(false)} />
+          <div className="ft-room-warning-confirm">
+            <p>
+              라운드를 종료할까요?
+              <br />
+              지금까지의 스코어가 저장되고 홈으로 돌아갑니다.
+            </p>
+            <div className="ft-pin-position-pills">
+              <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(false)}>
+                계속 플레이
+              </button>
+              <button className="ft-pin-pill is-active" onClick={handleEndRoundConfirmed}>
+                종료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLeaveConfirm && !showExitSheet && !showEndRoundConfirm && (
+        <div className="ft-gallery-overlay">
+          <div className="ft-gallery-scrim" onClick={() => setShowLeaveConfirm(false)} />
+          <div className="ft-room-warning-confirm">
+            <p>
+              {amHost ? (
+                <>
+                  방을 나가면 Host 권한이 다른 참가자에게 이전됩니다.
+                  <br />
+                  참가자가 없으면 방이 종료됩니다.
+                </>
+              ) : (
+                <>방에서 나가시겠습니까?</>
+              )}
+            </p>
+            <div className="ft-pin-position-pills">
+              <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(false)}>
+                취소
+              </button>
+              <button className="ft-pin-pill is-active" onClick={handleLeaveRoomConfirmed}>
+                방 나가기
+              </button>
+            </div>
           </div>
         </div>
       )}

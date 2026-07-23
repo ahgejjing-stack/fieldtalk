@@ -25,14 +25,14 @@ import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
 // roundId/...), persisted separately from full room state so an
 // interruption can offer [계속하기] without restoring stale members.
 import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
+import { RC4_BUILD_STAMP } from "./config/buildStamp.js";
 import { clearRoomState } from "./room/roomStorage.js";
 import { createNetworkRoundState } from "./data/roundSeed.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
 // sender path calls via useAudioEngine), not a second playback path.
 import { playSoundById } from "./services/audioEngine.js";
 
-function resolveDefaultSignalingUrl() {
-  const isHttpsPage = typeof window !== "undefined" && window.location && window.location.protocol === "https:";
+function resolveDefaultSignalingUrl() {  const isHttpsPage = typeof window !== "undefined" && window.location && window.location.protocol === "https:";
 
   const envUrl = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SIGNALING_URL;
   if (envUrl) {
@@ -60,6 +60,9 @@ function resolveDefaultSignalingUrl() {
   return "ws://localhost:8787";
 }
 const DEFAULT_SIGNALING_URL = resolveDefaultSignalingUrl();
+// RC4 — printed once, at module load, before any UI renders.
+// eslint-disable-next-line no-console
+console.log("[RC4 BUILD]", RC4_BUILD_STAMP, "| signalingUrl:", DEFAULT_SIGNALING_URL);
 
 // Real Device Status Bar Fix — same condition as the .ft-phone/.ft-root
 // "real device mode" CSS media query (narrow viewport + coarse/touch

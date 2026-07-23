@@ -455,5 +455,40 @@ await test("M2. P0-2: repeated reconnect cycles never grow the roster", () => {
   assert.equal(s.room.members.filter((m) => m.displayName === "GuestB").length, 1, "no duplicate names");
 });
 
+
+// ---- RC4 P0-3: exit sheet / confirm dialog mutual exclusion ----
+await test("N. P0-3: sheet and confirm dialogs are never visible at the same time", () => {
+  // Replicates the render guards in RoundScreen.jsx.
+  const visible = (s) => ({
+    sheet: s.showExitSheet,
+    endConfirm: s.showEndRoundConfirm && !s.showExitSheet,
+    leaveConfirm: s.showLeaveConfirm && !s.showExitSheet && !s.showEndRoundConfirm,
+  });
+
+  // Tapping "라운드 종료" closes the sheet and opens exactly one dialog.
+  let s = { showExitSheet: false, showEndRoundConfirm: true, showLeaveConfirm: false };
+  let v = visible(s);
+  assert.deepEqual(v, { sheet: false, endConfirm: true, leaveConfirm: false });
+
+  // Tapping "방 나가기" likewise.
+  s = { showExitSheet: false, showEndRoundConfirm: false, showLeaveConfirm: true };
+  v = visible(s);
+  assert.deepEqual(v, { sheet: false, endConfirm: false, leaveConfirm: true });
+
+  // The old bug: sheet open with a dialog flag set -> dialog must stay hidden
+  // (it used to be rendered UNDER the sheet, appearing on dismiss).
+  s = { showExitSheet: true, showEndRoundConfirm: true, showLeaveConfirm: true };
+  v = visible(s);
+  assert.equal(v.sheet, true);
+  assert.equal(v.endConfirm, false, "dialog must not render beneath the sheet");
+  assert.equal(v.leaveConfirm, false);
+
+  // Even if both flags were somehow set with no sheet, only ONE renders.
+  s = { showExitSheet: false, showEndRoundConfirm: true, showLeaveConfirm: true };
+  v = visible(s);
+  assert.equal(v.endConfirm, true);
+  assert.equal(v.leaveConfirm, false, "two confirm dialogs must never show together");
+});
+
 console.log(`
 ${passed} passed, 0 failed`);

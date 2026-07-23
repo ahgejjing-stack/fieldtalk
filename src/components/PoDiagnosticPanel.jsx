@@ -16,8 +16,11 @@ import React from "react";
  * be switched off in one place).
  * ------------------------------------------------------------------
  */
-export default function PoDiagnosticPanel({ round, players, loadingGate, networkCommunicationEnabled }) {
+export default function PoDiagnosticPanel({ round, players, loadingGate, networkCommunicationEnabled, buildStamp, roomCode, roomStatus }) {
   const rows = [
+    ["build", String(buildStamp ?? "unknown")],
+    ["room.code", String(roomCode ?? "none")],
+    ["room.status", String(roomStatus ?? "none")],
     ["round.id", String(round?.id)],
     ["round.status", String(round?.status)],
     ["players.length", String(players?.length ?? (round?.players?.length ?? 0))],

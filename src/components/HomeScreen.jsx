@@ -48,6 +48,22 @@ export default function HomeScreen({
     return ref && ref.userId === identity.userId ? ref : null;
   });
 
+  // RC4 P0 — after an explicit "방 나가기", handleLeaveRoom clears the
+  // persisted activeRoomRef, but this component's `activeRef` snapshot was
+  // taken once at mount and would keep showing the [계속하기] recovery card
+  // for a room the user just left ("실제 방을 나가지 못함"). Re-read the
+  // stored ref whenever we have no room, so a cleared ref is reflected.
+  useEffect(() => {
+    if (room) return;
+    const ref = loadActiveRoomRef();
+    const valid = ref && ref.userId === identity.userId ? ref : null;
+    setActiveRef((prev) => {
+      const prevId = prev?.roomId ?? null;
+      const nextId = valid?.roomId ?? null;
+      return prevId === nextId ? prev : valid;
+    });
+  }, [room, identity.userId]);
+
   // [계속하기] — rejoin the SAME room with the SAME identity, asking the
   // server to confirm it's still active (requireExisting). Live roster +
   // round are rebuilt from the server, never from stale local data.
@@ -330,7 +346,7 @@ export default function HomeScreen({
             라운드 시작
           </button>
           <button className="ft-team-connect-btn" onClick={handleTeamConnect}>
-            팀 연결{room ? ` · Room ${room.code}` : ""}
+            {room ? `Room ${room.code} · 라운드 준비` : "방 만들기"}
           </button>
           {room && (
             <button className="ft-team-connect-btn" onClick={handleCopyInviteLink}>
@@ -502,7 +518,7 @@ export default function HomeScreen({
             <div className="ft-namegate-icon">
               <Radio size={28} strokeWidth={2} />
             </div>
-            <div className="ft-namegate-title">팀 연결</div>
+            <div className="ft-namegate-title">방 만들기</div>
             {!editingName ? (
               <>
                 <p className="ft-namegate-sub">
