@@ -334,13 +334,41 @@ function AppShell() {
   // needed.
   useEffect(() => {
     if (!networkCommunicationEnabled || !room) return;
+    const serverIds = communication.members.map((m) => m.userId);
+    const localIds = room.members.map((m) => m.userId);
+    // RC4 P0-2 diagnostic — [ROOM MEMBERS SYNC] before/after on every
+    // join/leave/reconnect, so roster drift is visible on device.
+    // eslint-disable-next-line no-console
+    console.log(
+      "[ROOM MEMBERS SYNC] before",
+      `local=[${localIds.join(",")}]`,
+      `server=[${serverIds.join(",")}]`
+    );
+
+    // 1) Add / re-join anyone the SERVER says is present.
     for (const member of communication.members) {
       const existing = room.members.find((m) => m.userId === member.userId);
       if (!existing) {
         roomDispatch(roomActions.roomMemberInvite(member.userId, member.displayName));
         roomDispatch(roomActions.roomMemberJoin(member.userId));
       } else if (existing.joinStatus !== "joined") {
+        // RC4 P0-2 — a RECONNECT of a known userId must REPLACE/restore the
+        // existing member in place, never append a second row. roomMemberJoin
+        // updates by userId, so the roster length is unchanged.
         roomDispatch(roomActions.roomMemberJoin(member.userId));
+      }
+    }
+
+    // 2) RC4 P0-2 — the server roster is AUTHORITATIVE: anyone still marked
+    // joined locally but absent from the server list has left/disconnected
+    // and must be removed, otherwise every reconnect grows the roster
+    // ("같은 이름이 계속 추가됩니다"). Self is never pruned — the local user
+    // isn't in their own server member list.
+    for (const local of room.members) {
+      if (local.userId === identity.userId) continue;
+      if (local.joinStatus !== "joined") continue;
+      if (!serverIds.includes(local.userId)) {
+        roomDispatch(roomActions.roomMemberLeave(local.userId));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

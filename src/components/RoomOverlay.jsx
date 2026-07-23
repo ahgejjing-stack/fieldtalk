@@ -247,6 +247,8 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
 
   function runStart() {
     const result = startRoundFromRoom(selectedCourse, startHole);
+    // eslint-disable-next-line no-console
+    console.log("[ROOM OVERLAY] runStart", `buildOk=${result.ok}`, `reason=${result.reason ?? "-"}`, `course=${selectedCourse?.id ?? "none"}`, `startHole=${startHole}`);
     if (!result.ok) {
       // Blocking — Snapshot 생성 실패(또는 그 외 예상 못한 사유): 진행 불가,
       // 확인 모달이 아니라 원인만 안내.
@@ -290,7 +292,16 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     // 다른 이유로 앱을 안 쓰기로 한 경우)까지 매번 모달로 막으면, 정작
     // 진짜 확인이 필요한 Warning(코스/시작 홀 미선택 등)의 신뢰도까지
     // 같이 떨어진다.
-    const blockingWarnings = warnings.filter((w) => w !== "host_only");
+    // RC4 P0-1 FIX — "host_only"와 마찬가지로 "ptt_test_incomplete"도
+    // ROUND START를 막지 않는다. 마이크 확인은 라운드 중 언제든 할 수 있고,
+    // 실제로 팀 연결 후에는 기본값이 미완료라 이 경고가 100% 발생해
+    // Round Start가 아예 실행되지 않았다(모달만 뜨고 runStart 미호출 →
+    // "Round로 진입하지 않고 팀 연결 화면이 그대로 남는" 증상). 진짜로
+    // 진행 불가한 조건(코스/시작 홀 미선택)만 차단한다.
+    const NON_BLOCKING_WARNINGS = new Set(["host_only", "ptt_test_incomplete"]);
+    const blockingWarnings = warnings.filter((w) => !NON_BLOCKING_WARNINGS.has(w));
+    // eslint-disable-next-line no-console
+    console.log("[ROOM OVERLAY] handleStartTap", `warnings=[${warnings.join(",")}]`, `blocking=[${blockingWarnings.join(",")}]`, `→ ${blockingWarnings.length > 0 ? "BLOCKED (모달)" : "runStart()"}`);
     if (blockingWarnings.length > 0) {
       setPendingWarnings(blockingWarnings); // Warning — 확인 후 시작 가능
       return;

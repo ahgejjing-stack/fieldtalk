@@ -12,6 +12,8 @@
  */
 import assert from "node:assert/strict";
 import { buildInitialRoundFromRoom } from "./buildInitialRoundFromRoom.js";
+import { roomReducer, createEmptyRoomState } from "./roomReducer.js";
+import * as roomActionsAll from "./roomActions.js";
 import { createRoundPlayersFromRoom } from "./createRoundPlayersFromRoom.js";
 import { roundReducer } from "../engine/roundReducer.js";
 import * as actions from "../engine/roundActions.js";
@@ -391,6 +393,66 @@ await test("K. exit semantics: go-home / leave-room / end-round are all distinct
   for (const k of keys) {
     assert.equal(EXIT_SEMANTICS[k].clearsNickname, false, `${k} must NOT clear nickname/identity`);
   }
+});
+
+
+// ---- RC4 P0-1: ptt_test_incomplete must NOT block ROUND START ----
+import { selectRoomWarnings } from "./roomSelectors.js";
+
+await test("L. P0-1: mic-test-incomplete is advisory, does not block round start", () => {
+  const room = { members: [
+    { userId: "host_a", displayName: "HostA", joinStatus: "joined", role: "host", connectionStatus: "online" },
+    { userId: "guest_b", displayName: "GuestB", joinStatus: "joined", role: "member", connectionStatus: "online" },
+  ]};
+  const warnings = selectRoomWarnings(room, { courseSelected: true, startHoleSelected: true, currentUserId: "host_a" });
+  // The warning still surfaces (informational)...
+  assert.ok(warnings.includes("ptt_test_incomplete"));
+  // ...but it must not be treated as blocking (this is the RoomOverlay rule).
+  const NON_BLOCKING = new Set(["host_only", "ptt_test_incomplete"]);
+  const blocking = warnings.filter((w) => !NON_BLOCKING.has(w));
+  assert.deepEqual(blocking, [], "round start must proceed with only advisory warnings");
+});
+
+await test("L2. genuinely blocking conditions still block", () => {
+  const room = { members: [{ userId: "host_a", displayName: "HostA", joinStatus: "joined", role: "host", connectionStatus: "online" }]};
+  const warnings = selectRoomWarnings(room, { courseSelected: false, startHoleSelected: true, currentUserId: "host_a" });
+  const NON_BLOCKING = new Set(["host_only", "ptt_test_incomplete"]);
+  const blocking = warnings.filter((w) => !NON_BLOCKING.has(w));
+  assert.ok(blocking.includes("course_not_selected"), "no course must still block");
+});
+
+// ---- RC4 P0-2: reconnect must not duplicate room.members ----
+await test("M. P0-2: reconnect of same userId replaces in place (no duplicate)", () => {
+  let s = createEmptyRoomState();
+  s = roomReducer(s, roomActionsAll.roomCreate("host_a", "HostA"));
+  s = roomReducer(s, roomActionsAll.roomMemberInvite("guest_b", "GuestB"));
+  s = roomReducer(s, roomActionsAll.roomMemberJoin("guest_b"));
+  assert.equal(s.room.members.length, 2);
+
+  // B disconnects -> mirror prunes to "left"
+  s = roomReducer(s, roomActionsAll.roomMemberLeave("guest_b"));
+  const afterLeave = s.room.members.length;
+  assert.equal(afterLeave, 2, "leave marks status, roster length stays stable");
+  assert.notEqual(s.room.members.find((m) => m.userId === "guest_b").joinStatus, "joined");
+
+  // B reconnects with the SAME userId -> re-join in place
+  s = roomReducer(s, roomActionsAll.roomMemberJoin("guest_b"));
+  assert.equal(s.room.members.length, 2, "reconnect must NOT append a second GuestB");
+  assert.equal(s.room.members.filter((m) => m.userId === "guest_b").length, 1);
+  assert.equal(s.room.members.find((m) => m.userId === "guest_b").joinStatus, "joined");
+});
+
+await test("M2. P0-2: repeated reconnect cycles never grow the roster", () => {
+  let s = createEmptyRoomState();
+  s = roomReducer(s, roomActionsAll.roomCreate("host_a", "HostA"));
+  s = roomReducer(s, roomActionsAll.roomMemberInvite("guest_b", "GuestB"));
+  s = roomReducer(s, roomActionsAll.roomMemberJoin("guest_b"));
+  for (let i = 0; i < 5; i++) {
+    s = roomReducer(s, roomActionsAll.roomMemberLeave("guest_b"));
+    s = roomReducer(s, roomActionsAll.roomMemberJoin("guest_b"));
+  }
+  assert.equal(s.room.members.length, 2, "5 reconnect cycles must leave exactly 2 members");
+  assert.equal(s.room.members.filter((m) => m.displayName === "GuestB").length, 1, "no duplicate names");
 });
 
 console.log(`
