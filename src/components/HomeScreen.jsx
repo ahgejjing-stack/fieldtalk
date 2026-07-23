@@ -194,9 +194,19 @@ export default function HomeScreen({
   ];
 
   const handleTeamConnect = () => {
+    // RC4 — [ROOM CREATE] trace. PO DIAG showed room.code=none AFTER the
+    // user made a room, so the one remaining unknown is whether this path
+    // runs at all (nickname gate may be swallowing it) and whether
+    // roomCreate actually lands.
+    // eslint-disable-next-line no-console
+    console.log("[ROOM CREATE] tap", `hasRoom=${!!room}`, `nickConfirmed=${nickConfirmedThisSession()}`, `userId=${identity.userId}`);
     withNicknameConfirmed(() => {
+      // eslint-disable-next-line no-console
+      console.log("[ROOM CREATE] action running", `hasRoom=${!!room}`);
       if (!room) {
         dispatch(actions.roomCreate(identity.userId, identity.displayName));
+        // eslint-disable-next-line no-console
+        console.log("[ROOM CREATE] dispatched roomCreate", `userId=${identity.userId}`, `name=${identity.displayName}`);
       }
       // RC2 mic permission timing fix: request mic permission synchronously,
       // tied directly to this tap. iOS/WebKit can lose "user activation"

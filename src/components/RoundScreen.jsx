@@ -39,6 +39,27 @@ import { RC4_BUILD_STAMP } from "../config/buildStamp.js";
 // other player needs to see synced. "all" is a distinct selectable target
 // (§5 — not merely "nothing selected"), and is mutually exclusive with
 // picking specific players: choosing one clears the other.
+
+// RC4 UI — iOS Action Sheet styling. Founder: the confirm dialogs appeared
+// as a small box at the bottom-left; the requirement is a full-width,
+// bottom-anchored sheet with large (>=56px) tap targets, like a native iOS
+// action sheet. Defined here as constants so every sheet matches exactly.
+const SHEET_BTN_BASE = {
+  display: "block",
+  width: "100%",
+  minHeight: 56,
+  fontSize: 17,
+  fontWeight: 600,
+  borderRadius: 12,
+  border: "none",
+  marginBottom: 10,
+  padding: "16px 12px",
+  cursor: "pointer",
+};
+const SHEET_BTN_PLAIN = { ...SHEET_BTN_BASE, background: "#2c2c2e", color: "#fff" };
+const SHEET_BTN_DANGER = { ...SHEET_BTN_BASE, background: "#3a2a2a", color: "#ff453a" };
+const SHEET_BTN_CANCEL = { ...SHEET_BTN_BASE, background: "#3a3a3c", color: "#fff", marginBottom: 0 };
+
 const ALL_TARGET = "all";
 
 function toggleTarget(prevSet, id) {
@@ -368,15 +389,30 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
             lines, no big hero hole number, no decorative artwork. */}
         <div className="ft-compact-header">
           <button
-            className="ft-icon-btn"
             onClick={() => setShowExitSheet(true)}
             aria-label="라운드 메뉴"
-            // RC4 UI — Apple HIG minimum touch target (44x44pt). The default
-            // icon button was too small to hit reliably on a real phone,
-            // especially with gloves / mid-round.
-            style={{ minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+            // RC4 UI — Founder: "체감상 거의 동일". The previous minWidth/
+            // minHeight was being constrained by .ft-icon-btn's own sizing,
+            // so the class is dropped here and the button is sized
+            // explicitly: 52x52 hit area, larger glyph, negative margin so
+            // the bigger box doesn't shift the header layout.
+            style={{
+              width: 52,
+              height: 52,
+              margin: "-6px -6px -6px -10px",
+              padding: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              border: "none",
+              color: "inherit",
+              cursor: "pointer",
+              flexShrink: 0,
+              WebkitTapHighlightColor: "rgba(255,255,255,0.15)",
+            }}
           >
-            <ChevronLeft size={22} strokeWidth={2.2} />
+            <ChevronLeft size={28} strokeWidth={2.4} />
           </button>
           <div className="ft-compact-header-info">
             <div className="ft-compact-header-line1">
@@ -549,21 +585,16 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
           홈으로 이동(navigation only) / 방 나가기(room teardown) /
           라운드 종료(roundComplete, Room 유지). 같은 의미로 처리되지 않는다. */}
       {showExitSheet && (
-        <div className="ft-gallery-overlay">
-          <div className="ft-gallery-scrim" onClick={() => setShowExitSheet(false)} />
-          <div className="ft-gallery-sheet">
-            <div className="ft-gallery-sheet-head">
-              <span className="ft-gallery-sheet-title">라운드 메뉴</span>
-              <button type="button" className="ft-icon-btn" onClick={() => setShowExitSheet(false)} aria-label="닫기">
-                <X size={16} strokeWidth={2.2} />
-              </button>
-            </div>
-            <div className="ft-pin-position-pills" style={{ flexDirection: "column", gap: 8, padding: 12 }}>
-              <button className="ft-pin-pill" onClick={handleGoHomeFromSheet}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100000, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowExitSheet(false)} />
+          <div style={{ position: "relative", background: "#1c1c1e", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "20px 16px calc(20px + env(safe-area-inset-bottom))", color: "#fff" }}>
+            <div style={{ textAlign: "center", fontSize: 13, color: "#8e8e93", marginBottom: 14 }}>라운드 메뉴</div>
+            <div>
+              <button style={SHEET_BTN_PLAIN} onClick={handleGoHomeFromSheet}>
                 홈으로 이동 (라운드 유지)
               </button>
               <button
-                className="ft-pin-pill"
+                style={SHEET_BTN_PLAIN}
                 onClick={() => {
                   // RC4 P0-3 — CLOSE the sheet first. The sheet is a
                   // full-screen ft-gallery-overlay rendered AFTER these
@@ -578,7 +609,7 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
                 라운드 종료
               </button>
               <button
-                className="ft-pin-pill"
+                style={SHEET_BTN_DANGER}
                 onClick={() => {
                   setShowExitSheet(false);
                   setShowLeaveConfirm(true);
@@ -586,7 +617,7 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
               >
                 방 나가기
               </button>
-              <button className="ft-pin-pill" onClick={() => setShowExitSheet(false)}>
+              <button style={SHEET_BTN_CANCEL} onClick={() => setShowExitSheet(false)}>
                 취소
               </button>
             </div>
@@ -600,31 +631,29 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
           닫는 순간 두 개가 동시에 나타났다). 또한 두 다이얼로그는 상호
           배타적으로 렌더해 절대 동시에 뜨지 않는다. */}
       {showEndRoundConfirm && !showExitSheet && (
-        <div className="ft-gallery-overlay">
-          <div className="ft-gallery-scrim" onClick={() => setShowEndRoundConfirm(false)} />
-          <div className="ft-room-warning-confirm">
-            <p>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100000, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowEndRoundConfirm(false)} />
+          <div style={{ position: "relative", background: "#1c1c1e", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "20px 16px calc(20px + env(safe-area-inset-bottom))", color: "#fff" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", textAlign: "center", color: "#d1d1d6" }}>
               라운드를 종료할까요?
               <br />
               지금까지의 스코어가 저장되고 홈으로 돌아갑니다.
             </p>
-            <div className="ft-pin-position-pills">
-              <button className="ft-pin-pill" onClick={() => setShowEndRoundConfirm(false)}>
-                계속 플레이
-              </button>
-              <button className="ft-pin-pill is-active" onClick={handleEndRoundConfirmed}>
-                종료
-              </button>
-            </div>
+            <button style={SHEET_BTN_DANGER} onClick={handleEndRoundConfirmed}>
+              라운드 종료
+            </button>
+            <button style={SHEET_BTN_CANCEL} onClick={() => setShowEndRoundConfirm(false)}>
+              계속 플레이
+            </button>
           </div>
         </div>
       )}
 
       {showLeaveConfirm && !showExitSheet && !showEndRoundConfirm && (
-        <div className="ft-gallery-overlay">
-          <div className="ft-gallery-scrim" onClick={() => setShowLeaveConfirm(false)} />
-          <div className="ft-room-warning-confirm">
-            <p>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100000, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowLeaveConfirm(false)} />
+          <div style={{ position: "relative", background: "#1c1c1e", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "20px 16px calc(20px + env(safe-area-inset-bottom))", color: "#fff" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", textAlign: "center", color: "#d1d1d6" }}>
               {amHost ? (
                 <>
                   방을 나가면 Host 권한이 다른 참가자에게 이전됩니다.
@@ -635,14 +664,12 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
                 <>방에서 나가시겠습니까?</>
               )}
             </p>
-            <div className="ft-pin-position-pills">
-              <button className="ft-pin-pill" onClick={() => setShowLeaveConfirm(false)}>
-                취소
-              </button>
-              <button className="ft-pin-pill is-active" onClick={handleLeaveRoomConfirmed}>
-                방 나가기
-              </button>
-            </div>
+            <button style={SHEET_BTN_DANGER} onClick={handleLeaveRoomConfirmed}>
+              방 나가기
+            </button>
+            <button style={SHEET_BTN_CANCEL} onClick={() => setShowLeaveConfirm(false)}>
+              취소
+            </button>
           </div>
         </div>
       )}

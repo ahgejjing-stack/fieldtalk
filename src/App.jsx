@@ -242,6 +242,22 @@ function AppShell() {
     setScreen("round");
   };
 
+  // RC4 — [ROOM STATE] observer. Prints every Room transition so a device
+  // log shows whether the room was created and, if it disappears, exactly
+  // when. PO DIAG reported room.code=none right after creating a room.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log(
+      "[ROOM STATE]",
+      `code=${room?.code ?? "none"}`,
+      `status=${room?.status ?? "none"}`,
+      `members=${room?.members?.length ?? 0}`,
+      `hostUserId=${room?.hostUserId ?? "none"}`,
+      `networkEnabled=${networkCommunicationEnabled}`,
+      `screen=${screen}`
+    );
+  }, [room, networkCommunicationEnabled, screen]);
+
   // RC4 — three DISTINCT round-screen exits, each with an explicit,
   // non-overlapping state transition. These are the single source of truth
   // shared by RoundScreen's action sheet and RoomOverlay's leave button so
