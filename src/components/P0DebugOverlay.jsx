@@ -1,6 +1,55 @@
 import React, { useState, useEffect } from "react";
 import { getDiagEntries, subscribeDiag, clearDiag } from "../config/diagLog.js";
 
+
+/** RC4 — PO must NEVER white-screen the app. JSON.stringify throws on
+ * circular structures (DOM nodes, RTCPeerConnection, Events), which is
+ * exactly the kind of value that ends up in a diagnostic `detail`. */
+
+/** RC4 — error boundary around the whole PO panel. A debug tool must never
+ * be able to break the app it is debugging: if anything inside throws, we
+ * render a tiny inert marker instead of unmounting the tree (white screen).
+ * Founder rule: "PO 때문에 새로고침해야 하는 상황은 가장 높은 우선순위의 버그". */
+class PoErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err) {
+    // eslint-disable-next-line no-console
+    console.error("[PO PANEL] crashed (contained, app kept alive)", err?.message ?? err);
+  }
+  render() {
+    if (this.state.failed) {
+      return (
+        <button
+          type="button"
+          onClick={() => this.setState({ failed: false })}
+          style={{ position: "fixed", top: 8, right: 8, zIndex: 100001, background: "#ff453a", color: "#fff", border: "none", borderRadius: 8, padding: "6px 10px", font: "11px ui-monospace, monospace" }}
+        >
+          PO ⚠ retry
+        </button>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function safeStringify(v) {
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    try {
+      return String(v);
+    } catch {
+      return "[unserializable]";
+    }
+  }
+}
+
 const STAGE_LABELS = {
   roomJoin: "1. Room Join",
   offerCreated: "2. Offer 생성",
@@ -30,7 +79,7 @@ const STATUS_COLOR = {
  * (always "—", manual/human-only — see NetworkPttClient.js) are kept
  * visibly distinct on purpose: the code never claims to have heard
  * anything, only to have measured something. */
-export default function P0DebugOverlay({
+function P0DebugOverlayInner({
   p0Lifecycle,
   p0LevelDebug,
   // RC4 P1-2 — remote-audio diagnostics for the "signal PASS / no sound"
@@ -198,7 +247,7 @@ export default function P0DebugOverlay({
                 {status}
               </span>
               {entry?.detail && (
-                <span className="ft-p0-overlay-detail">{JSON.stringify(entry.detail).slice(0, 60)}</span>
+                <span className="ft-p0-overlay-detail">{safeStringify(entry.detail).slice(0, 60)}</span>
               )}
             </div>
           );
@@ -211,5 +260,13 @@ export default function P0DebugOverlay({
         </div>
       )}
     </div>
+  );
+}
+
+export default function P0DebugOverlay(props) {
+  return (
+    <PoErrorBoundary>
+      <P0DebugOverlayInner {...props} />
+    </PoErrorBoundary>
   );
 }

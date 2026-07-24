@@ -337,34 +337,11 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
     `loadingGate=${isPendingNetworkRound}`
   );
 
-  if (isPendingNetworkRound) {
-    // eslint-disable-next-line no-console
-    console.log("[ROUND HYDRATE SOURCE]", "source=server_snapshot (pending)");
-    return (
-      <div className="ft-screen ft-round">
-        <PoDiagnosticPanel
-          round={round}
-          players={players}
-          loadingGate={true}
-          networkCommunicationEnabled={networkCommunicationEnabled}
-          buildStamp={RC4_BUILD_STAMP}
-          roomCode={room?.code}
-          roomStatus={room?.status}
-        />
-        <div className="ft-round-scroll">
-          <div className="ft-compact-header">
-            <button className="ft-icon-btn" onClick={onBack} aria-label="뒤로">
-              <ChevronLeft size={18} strokeWidth={2.2} />
-            </button>
-            <div className="ft-compact-header-text">
-              <div className="ft-compact-course">라운드 준비 중</div>
-              <div className="ft-compact-hole">Host가 라운드를 시작하면 참가자가 표시됩니다</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // RC4 — Round Preparation 화면 삭제 (Product Director decision).
+  // Room 화면이 이미 같은 정보(참가자/코스/시작)를 보여주므로 두 번 보여줄
+  // 이유가 없다. ROUND START → Hole1 으로 바로 진입한다. 데모 플레이어 유입은
+  // createRoundPlayersFromRoom의 networkMode 필터와 서버 권위 로스터가
+  // 이미 막고 있으므로 이 게이트 없이도 안전하다.
 
   return (
     <div className="ft-screen ft-round">

@@ -5,4 +5,4 @@
  * import it without creating a circular dependency.
  * Update this string on every build handed to device testing.
  */
-export const RC4_BUILD_STAMP = "RC4-2026-07-24T02:10Z-HOLE1-TRACE";
+export const RC4_BUILD_STAMP = "RC4-2026-07-24T03:38Z-UX-DIRECT-HOLE1";

@@ -205,6 +205,13 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   const selectedCourse = courses.find((c) => c.id === selectedCourseId) ?? null;
   const maxHole = selectedCourse?.course.holeCount ?? 18;
   const joined = selectJoinedMembers(room);
+  // RC4 — 표시용 인원수는 "현재 연결된" 참가자만, Host(=나) 포함으로 센다.
+  // Host 혼자 = 1명, Host + Guest = 2명. 끊긴 사용자는 세지 않는다.
+  const connectedCountForDisplay = room
+    ? room.members.filter(
+        (m) => m.userId === identity.userId || (m.joinStatus === "joined" && m.connectionStatus === "online")
+      ).length
+    : 0;
 
   function cycleCompanionStatus(companion) {
     const member = room.members.find((m) => m.userId === companion.id);
@@ -483,27 +490,31 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
             `hostUserId=${room.hostUserId}`,
             `members=${JSON.stringify(room.members.map((m) => ({ userId: m.userId, name: m.displayName, joinStatus: m.joinStatus })))}`
           );
-          const others = room.members.filter((m) => m.userId !== identity.userId);
+          // RC4 — Roster는 "현재 연결된 참가자"만 표시한다. 끊긴 사용자는
+          // 목록에 남기지 않는다(Product Director decision). 자신은 항상
+          // 포함하며(로컬 기기는 정의상 연결됨), 참가자 수도 Host 포함으로
+          // 센다: Host 혼자 = 1명, Host + Guest = 2명.
+          const connected = room.members.filter(
+            (m) => m.userId === identity.userId || (m.joinStatus === "joined" && m.connectionStatus === "online")
+          );
+          const connectedCount = connected.length;
+          const others = connected.filter((m) => m.userId !== identity.userId);
           return (
           <div className="ft-room-section">
-            <span className="ft-pin-position-label">참가자</span>
+            <span className="ft-pin-position-label">참가자 {connectedCount}명</span>
             <div className="ft-room-member-list">
-              {room.members.map((m) => {
-                const isJoined = m.joinStatus === "joined";
+              {connected.map((m) => {
                 const isHost = m.userId === room.hostUserId;
                 const isSelf = m.userId === identity.userId;
                 return (
-                  <div
-                    key={m.userId}
-                    className={`ft-room-member-row ${isJoined ? "is-joined" : ""}`}
-                  >
+                  <div key={m.userId} className="ft-room-member-row is-joined">
                     <span className="ft-room-member-name">
                       {isSelf ? "나" : m.displayName}
                       {isHost ? " · Host" : ""}
                     </span>
                     <span className="ft-room-member-status">
-                      {isJoined && <Check size={11} strokeWidth={3} />}
-                      {m.connectionStatus === "online" ? "연결됨" : "연결 끊김"}
+                      <Check size={11} strokeWidth={3} />
+                      연결됨
                     </span>
                   </div>
                 );
@@ -676,7 +687,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
       <div className="ft-room-overlay-footer">
         <div className="ft-room-ready-summary">
           <span>Host {room.members.find((m) => m.userId === room.hostUserId)?.displayName}</span>
-          <span>참여 {joined.length}명</span>
+          <span>참가자 {connectedCountForDisplay}명</span>
           <span>{selectedCourse ? `${displayCourseName(selectedCourse.course.name)} ${startHole}번 홀` : "코스 미선택"}</span>
         </div>
 
