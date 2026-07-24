@@ -49,12 +49,15 @@ function updateMember(members, userId, patch) {
 export function roomReducer(state, action) {
   switch (action.type) {
     case ROOM_CREATE: {
-      const { hostUserId, hostDisplayName } = action.payload;
+      const { hostUserId, hostDisplayName, title } = action.payload;
       return {
         ...state,
         room: {
           id: `room_${Date.now()}`,
           code: generateRoomCode(),
+          // RC4 — 방 제목. 사용자가 방 만들기 화면에서 지정하며,
+          // 비어 있으면 "{닉네임}님의 라운드"를 기본값으로 쓴다.
+          title: (title && title.trim()) || `${hostDisplayName}님의 라운드`,
           status: "preparing",
           hostUserId,
           members: [

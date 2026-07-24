@@ -24,9 +24,11 @@ export const ROOM_RESET = "ROOM_RESET";
 
 /** Creates a new Room with the host as its first member, already joined
  * (a host doesn't "invite" themselves). */
-export const roomCreate = (hostUserId, hostDisplayName) => ({
+/** RC4 — title은 방 만들기 화면에서 입력받는다. 생략하면 리듀서가
+ * "{닉네임}님의 라운드"를 기본값으로 채운다. */
+export const roomCreate = (hostUserId, hostDisplayName, title = null) => ({
   type: ROOM_CREATE,
-  payload: { hostUserId, hostDisplayName },
+  payload: { hostUserId, hostDisplayName, title },
 });
 
 /** Runtime Identity v0.4 §6 — Member joins an EXISTING room by typing in

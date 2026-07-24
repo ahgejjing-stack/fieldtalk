@@ -307,14 +307,14 @@ function AppShell() {
     // 라운드 화면이 렌더되면 플레이어가 0명이라 "빈 화면"이 됐다
     // (Founder 확인 버그). 로컬 시드는 항상 플레이 가능한 상태이므로
     // 홈에서 바로 로컬 라운드를 시작할 수 있다.
-    // RC4 — 네트워크 방 나가기 전용 정리.
-    // roundReset()은 createRoundSeed()(데모 4명)를 만들기 때문에 여기서는
-    // 쓰지 않는다. 네트워크 방을 나갈 때 데모 플레이어가 생성되면 안 된다
-    // (Product Director decision). 활성 네트워크 라운드만 제거하고
-    // 플레이어 0명의 깨끗한 상태로 둔다. Home 화면은 round 상태를 참조하지
-    // 않으므로 이 상태로 홈에 머무는 데 문제가 없고, 다음 로컬 라운드는
-    // 홈에서 시작할 때 새로 시드된다.
-    dispatch(actions.roundLeaveNetwork(createNetworkRoundState({ players: [] })));
+    // RC4 — 방 나가기(B안, PD 승인): 앱 최초 실행 상태로 복귀한다.
+    // createRoundSeed()는 RoundProvider.jsx:15의 초기값과 동일하므로
+    // "데모를 새로 만드는 것"이 아니라 "앱을 처음 켠 상태로 되돌리는 것"이다.
+    // net_pending(players:0)을 남기면 홈에서 로컬 라운드를 시작할 때
+    // 플레이어 0명인 빈 라운드가 되어 빈 화면의 원인이 된다.
+    // 네트워크 라운드에는 데모 플레이어를 절대 주입하지 않는다 —
+    // 네트워크 라운드는 서버 로스터로만 생성된다(createRoundPlayersFromRoom).
+    dispatch(actions.roundLeaveNetwork(createRoundSeed()));
     setNetworkCommunicationEnabled(false);
     setScreen("home");
     showToast("방에서 나갔습니다");

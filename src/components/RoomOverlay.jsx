@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, X, Check, Mic } from "lucide-react";
 import { useRoom } from "../context/useRoom.js";
 import { useRound } from "../context/useRound.js";
-import { createNetworkRoundState } from "../data/roundSeed.js";
+import { createRoundSeed } from "../data/roundSeed.js";
 import { useStartRoundFromRoom } from "../room/useStartRoundFromRoom.js";
 import { clearRoomState } from "../room/roomStorage.js";
 import { clearActiveRoomRef } from "../room/activeRoomRef.js";
@@ -68,7 +68,7 @@ const PTT_TEST_LABEL = {
  * parallel pattern — same choice the old PreRoundCourseSelect.jsx made,
  * whose course-selection section lives on here unchanged in spirit.
  */
-export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
+export default function RoomOverlay({ isOpen, onClose, onToast, onStart, initialCourseId = null, initialStartHole = 1 }) {
   const { room, dispatch, actions } = useRoom();
   const communication = useCommunication();
   const identity = useIdentity();
@@ -119,8 +119,12 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
         // eslint-disable-next-line no-console
         console.log("[COURSE LOAD] ok", `count=${list?.length ?? 0}`, `firstId=${list?.[0]?.id ?? "none"}`, `provider=${providerChoice}`);
         setCourses(list ?? []);
-        setSelectedCourseId(list?.[0]?.id ?? null);
-        setStartHole(1);
+        // RC4 — 방 만들기 화면에서 이미 고른 코스/홀이 있으면 그것을 우선한다.
+        const preferred = initialCourseId && (list ?? []).some((c) => c.id === initialCourseId)
+          ? initialCourseId
+          : list?.[0]?.id ?? null;
+        setSelectedCourseId(preferred);
+        setStartHole(initialStartHole ?? 1);
         if (!list || list.length === 0) {
           onToast?.("코스를 불러오지 못했습니다. 다시 시도해주세요.");
         }
@@ -189,7 +193,10 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   if (!room) {
     return (
       <div className="ft-gallery-overlay">
-        <div className="ft-gallery-scrim" onClick={onClose} />
+        {/* RC4 — 배경 터치로 닫히지 않는다(PD 결정). 방/라운드 설정 중
+            실수로 밖을 눌러 화면이 사라지면 안 되기 때문. 닫기는 명시적
+            버튼으로만 한다. */}
+        <div className="ft-gallery-scrim" />
         <div className="ft-gallery-sheet">
           <div className="ft-gallery-sheet-head">
             <span className="ft-gallery-sheet-title">Room을 불러올 수 없습니다</span>
@@ -397,7 +404,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     // RC4 — 방 나가기는 활성 네트워크 라운드도 제거한다(데모 생성 없이).
     // 이 경로는 이전에 Round를 전혀 정리하지 않아, 방을 나간 뒤에도 이전
     // 네트워크 라운드가 남아 있었다. App.handleLeaveRoom과 동일한 규칙.
-    roundDispatch(roundActions.roundLeaveNetwork(createNetworkRoundState({ players: [] })));
+    roundDispatch(roundActions.roundLeaveNetwork(createRoundSeed()));
     // RC4 — leaving a room is NOT a logout: identity, nickname, and the
     // nickname-confirmation session flag must all survive so re-joining a
     // new room never forces the person to re-confirm their nickname.
@@ -411,12 +418,15 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
 
   return (
     <div className="ft-gallery-overlay">
-      <div className="ft-gallery-scrim" onClick={onClose} />
+        {/* RC4 — 배경 터치로 닫히지 않는다(PD 결정). 방/라운드 설정 중
+            실수로 밖을 눌러 화면이 사라지면 안 되기 때문. 닫기는 명시적
+            버튼으로만 한다. */}
+      <div className="ft-gallery-scrim" />
       <div className="ft-room-overlay-stack">
       <div className="ft-gallery-sheet ft-room-sheet">
         <div className="ft-gallery-sheet-head">
           <span className="ft-gallery-sheet-title">
-            Room {room.code} · 라운드 준비
+            {room.title ?? "라운드"} · {room.code}
           </span>
           <button type="button" className="ft-icon-btn" onClick={onClose} aria-label="닫기">
             <X size={16} strokeWidth={2.2} />
@@ -531,7 +541,6 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
           </div>
           );
         })()}
-        )}
 
         {/* PTT 테스트 상태 (§4/§5, DEV 시뮬레이션) + 실제 마이크 준비(§6-A) */}
         {joined.length > 0 && (

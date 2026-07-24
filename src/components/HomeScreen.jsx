@@ -3,6 +3,8 @@ import { Check, Radio, Settings, User, Users } from "lucide-react";
 import GolfBall from "./GolfBall.jsx";
 import RoomOverlay from "./RoomOverlay.jsx";
 import { useRoom } from "../context/useRoom.js";
+import { useRound } from "../context/useRound.js";
+import CreateRoomScreen from "./CreateRoomScreen.jsx";
 import { useIdentity } from "../context/useIdentity.js";
 import { useRuntimeMode } from "../context/RuntimeModeContext.jsx";
 import { loadActiveRoomRef, clearActiveRoomRef } from "../room/activeRoomRef.js";
@@ -34,9 +36,14 @@ export default function HomeScreen({
   onAutoJoinConsumed,
 }) {
   const { room, dispatch, actions } = useRoom();
+  const { round } = useRound(); // RC4 P0 — 진행 중 라운드면 준비 화면을 건너뛴다
   const identity = useIdentity();
   const { setNetworkCommunicationEnabled, setRejoinRequested, networkCommunicationEnabled } = useRuntimeMode();
   const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
+  // RC4 — 방 만들기 화면. Room은 이 화면의 [방 만들기] 버튼에서만 생성된다.
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
+  // 방 만들기 화면에서 고른 코스/시작 홀을 Room 화면으로 전달한다.
+  const [pendingRoundSetup, setPendingRoundSetup] = useState(null);
 
   // RC4 Session Recovery — the minimal active-room reference that survives
   // an app restart (roomId/userId/roundId/lastHole, NOT stale members).
@@ -89,6 +96,15 @@ export default function HomeScreen({
   const handleHomeStartRound = () => {
     // eslint-disable-next-line no-console
     console.log("[HOME START]", `hasRoom=${!!room}`, `networkEnabled=${networkCommunicationEnabled}`, "→", room ? "open RoomOverlay (build real round)" : "bare onStartRound (local/demo)");
+    // RC4 P0 — 이미 진행 중인 라운드가 있으면 준비 화면(RoomOverlay)을
+    // 다시 열지 않고 Hole로 바로 복귀한다. 이전에는 room만 있으면 무조건
+    // 오버레이를 열어서 "ROUND START -> 다시 라운드 준비"로 돌아갔다.
+    // 라운드 준비 화면은 라운드를 "시작하기 전" 1회만 필요하다.
+    const roundInProgress = round && round.status === "active" && (round.players?.length ?? 0) > 0;
+    if (roundInProgress) {
+      onStartRound(round); // 화면만 round로 전환 (재빌드 없음)
+      return;
+    }
     if (room) {
       // Ensure network mode is on for a room-based round — closing/reopening
       // the overlay or other flows may have left it off.
@@ -193,38 +209,41 @@ export default function HomeScreen({
     { id: "player_haeran", name: "해란", color: "#E37FBD" },
   ];
 
+  // RC4 — "방 만들기" 진입. 여기서는 Room을 만들지 않는다.
+  // 방 만들기 화면(CreateRoomScreen)을 열고, 사용자가 설정을 마친 뒤
+  // [방 만들기] 버튼을 눌렀을 때 handleCreateRoomSubmit에서 생성한다.
   const handleTeamConnect = () => {
-    // RC4 — [ROOM CREATE] trace. PO DIAG showed room.code=none AFTER the
-    // user made a room, so the one remaining unknown is whether this path
-    // runs at all (nickname gate may be swallowing it) and whether
-    // roomCreate actually lands.
     // eslint-disable-next-line no-console
-    console.log("[ROOM CREATE] tap", `hasRoom=${!!room}`, `nickConfirmed=${nickConfirmedThisSession()}`, `userId=${identity.userId}`);
-    withNicknameConfirmed(() => {
-      // eslint-disable-next-line no-console
-      console.log("[ROOM CREATE] action running", `hasRoom=${!!room}`);
-      if (!room) {
-        dispatch(actions.roomCreate(identity.userId, identity.displayName));
-        // eslint-disable-next-line no-console
-        console.log("[ROOM CREATE] dispatched roomCreate", `userId=${identity.userId}`, `name=${identity.displayName}`);
-      }
-      // RC2 mic permission timing fix: request mic permission synchronously,
-      // tied directly to this tap. iOS/WebKit can lose "user activation"
-      // context by the time an async network round-trip (room_joined)
-      // resolves, which is when the existing prepare-mic-in-parallel logic
-      // fires — the permission dialog can then appear disconnected from
-      // any visible action, "suddenly", much later. Asking here instead
-      // means it's always tied to the tap the person just made. Once
-      // granted, the later flow just reuses it — no second prompt.
-      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-        navigator.mediaDevices
-          .getUserMedia({ audio: true })
-          .then((stream) => stream.getTracks().forEach((t) => t.stop()))
-          .catch(() => {}); // denial/failure surfaces normally later via the real prepare() flow
-      }
+    console.log("[CREATE ROOM] open", `hasRoom=${!!room}`, `nickConfirmed=${nickConfirmedThisSession()}`);
+    // 이미 방이 있으면 방 만들기가 아니라 Room 화면으로 간다.
+    if (room) {
       setNetworkCommunicationEnabled(true);
       setRoomOverlayOpen(true);
+      return;
+    }
+    withNicknameConfirmed(() => {
+      setCreateRoomOpen(true);
     });
+  };
+
+  // RC4 — 방 만들기 화면의 [방 만들기] 버튼. 이 시점에 비로소 Room이 생성된다.
+  const handleCreateRoomSubmit = ({ title, course, startHole }) => {
+    // eslint-disable-next-line no-console
+    console.log("[CREATE ROOM] creating", `title=${title}`, `course=${course?.id}`, `startHole=${startHole}`);
+    dispatch(actions.roomCreate(identity.userId, identity.displayName, title));
+    setPendingRoundSetup({ course, startHole });
+
+    // RC2 mic permission timing fix: 사용자 탭과 같은 실행 컨텍스트에서
+    // 권한을 요청해야 iOS/WebKit에서 권한창이 뒤늦게 뜨지 않는다.
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+        .catch(() => {});
+    }
+    setNetworkCommunicationEnabled(true);
+    setCreateRoomOpen(false);
+    setRoomOverlayOpen(true); // 생성 완료 -> Room 화면(대기)
   };
 
   // RC1-WEEK3 §1 — the real replacement for "호스트가 동반자 상태를 대신
@@ -356,7 +375,7 @@ export default function HomeScreen({
             라운드 시작
           </button>
           <button className="ft-team-connect-btn" onClick={handleTeamConnect}>
-            {room ? `Room ${room.code} · 라운드 준비` : "방 만들기"}
+            {room ? `${room.title ?? "라운드"} · ${room.code}` : "방 만들기"}
           </button>
           {room && (
             <button className="ft-team-connect-btn" onClick={handleCopyInviteLink}>
@@ -502,10 +521,21 @@ export default function HomeScreen({
         </button>
       </div>
 
+      <CreateRoomScreen
+        isOpen={createRoomOpen}
+        onCancel={() => setCreateRoomOpen(false)}
+        onCreate={handleCreateRoomSubmit}
+        onToast={onToast}
+      />
+
       <RoomOverlay
         isOpen={roomOverlayOpen}
         onClose={() => setRoomOverlayOpen(false)}
         onToast={onToast}
+        // RC4 — 방 만들기 화면에서 고른 코스/시작 홀을 그대로 이어받는다.
+        // 같은 설정을 Room 화면에서 다시 고르게 하지 않기 위함.
+        initialCourseId={pendingRoundSetup?.course?.id ?? null}
+        initialStartHole={pendingRoundSetup?.startHole ?? 1}
         onStart={(startedRound) => {
           setRoomOverlayOpen(false);
           // RC4 P0 Round Start Deadlock fix (Issue 1-A) — forward the
