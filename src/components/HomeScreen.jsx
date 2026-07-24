@@ -29,6 +29,7 @@ function HomeGlyph({ active }) {
 
 export default function HomeScreen({
   onStartRound,
+  onResumeRound,
   onToast,
   onOpenTwoDeviceTest,
   onOpenIdentitySelect,
@@ -102,7 +103,9 @@ export default function HomeScreen({
     // 라운드 준비 화면은 라운드를 "시작하기 전" 1회만 필요하다.
     const roundInProgress = round && round.status === "active" && (round.players?.length ?? 0) > 0;
     if (roundInProgress) {
-      onStartRound(round); // 화면만 round로 전환 (재빌드 없음)
+      // RC4 P0 — 복귀 전용 경로. onStartRound(round)를 쓰면 인자 때문에
+      // "호스트가 새로 시작"으로 오인되어 demo-seed 가드에 차단된다.
+      onResumeRound?.();
       return;
     }
     if (room) {
@@ -215,6 +218,12 @@ export default function HomeScreen({
   const handleTeamConnect = () => {
     // eslint-disable-next-line no-console
     console.log("[CREATE ROOM] open", `hasRoom=${!!room}`, `nickConfirmed=${nickConfirmedThisSession()}`);
+    // RC4 P0 — 라운드가 진행 중이면 준비/Room 화면을 열지 않고 Hole로 복귀한다.
+    // (Round Preparation 재진입 차단: 모든 경로에 동일 규칙 적용)
+    if (round && round.status === "active" && (round.players?.length ?? 0) > 0) {
+      onResumeRound?.();
+      return;
+    }
     // 이미 방이 있으면 방 만들기가 아니라 Room 화면으로 간다.
     if (room) {
       setNetworkCommunicationEnabled(true);

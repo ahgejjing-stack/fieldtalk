@@ -289,6 +289,17 @@ function AppShell() {
     setScreen("home");
   };
 
+  // RC4 P0 — 이미 진행 중인 라운드로 "복귀"만 한다. 라운드를 새로
+  // 시작하지 않으므로 handleStartRound의 host/demo-seed 가드를 전혀 타지
+  // 않는다. 이전에는 복귀에도 handleStartRound(round)를 썼는데, 인자가
+  // 있으면 startingAsHost=true로 오인되어 로컬 라운드일 때 demo-seed
+  // 가드에 걸려 화면 전환이 차단됐다(= "라운드 준비" 화면 재노출).
+  const handleResumeRound = () => {
+    // eslint-disable-next-line no-console
+    console.log("[RESUME ROUND] setScreen(round)", `roundId=${round?.id}`, `players=${round?.players?.length ?? 0}`);
+    setScreen("round");
+  };
+
   // 방 나가기 — full teardown of "being in a room", WITHOUT touching
   // identity/nickname (leaving a room is not a logout). Tears down the three
   // systems that each own a piece of room membership (communication / Room
@@ -599,6 +610,7 @@ function AppShell() {
         {screen === "home" && (
           <HomeScreen
             onStartRound={handleStartRound}
+            onResumeRound={handleResumeRound}
             onToast={showToast}
             onOpenTwoDeviceTest={() => setScreen("twoDeviceTest")}
             onOpenIdentitySelect={() => setScreen("identitySelect")}
