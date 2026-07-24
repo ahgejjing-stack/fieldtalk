@@ -254,72 +254,79 @@ function hydrateRound(round) {
 /**
  * RC4 — legacy demo state 판별.
  * ------------------------------------------------------------------
- * 이전 빌드는 앱 시작 시 무조건 createRoundSeed()(round_demo_001, active,
- * 데모 4명)로 초기화했고, RoundProvider의 자동 저장이 그 값을 그대로
- * localStorage에 기록했다. 그래서 새 빌드를 배포해도 기존 기기에서는
- * 사용자가 아무것도 하지 않은 데모 상태가 복원된다.
+ * "round_demo_001"은 과거 데모 빌드에서만 존재했던 하드코딩 id다.
+ * 실제 사용자가 시작하는 로컬 라운드는 `round_<timestamp>` 형식이고,
+ * 네트워크 라운드도 `round_<ts>` / `net_pending_<ts>` 형식이므로,
+ * 이 id를 보존해야 할 이유가 없다.
  *
- * 여기서 폐기 대상은 "이전 빌드가 자동 생성한, 손대지 않은 데모 상태"
- * 뿐이다. 사용자가 실제로 플레이한 흔적(스코어/샷/이벤트/홀 진행)이
- * 하나라도 있으면 사용자의 데이터이므로 보존한다.
+ * 이전 버전은 여기에 "플레이 흔적 검사"(events/shots/score)를 추가했는데,
+ * 이전 빌드의 자동 데모 PTT 타이머가 events를 생성하기 때문에 실기기에서
+ * 그 검사가 사용자 데이터로 오인되어 legacy 상태가 그대로 보존됐다.
+ * 따라서 id 하나만으로 판정한다.
  */
-const LEGACY_DEMO_PLAYER_IDS = ["player_jaesik", "player_jaegeun", "player_gwangcheon", "player_haeran"];
-
 export function isLegacyDemoRound(round) {
-  if (!round) return false;
-  // 1) 이전 빌드의 데모 시드 식별자 + 상태
-  if (round.id !== "round_demo_001") return false;
-  if (round.status !== "active") return false;
-  // 2) 네트워크 라운드가 아님 (room에 속하지 않음)
-  if (round.roomId) return false;
-  if (round.isNetworkBaseline === true) return false;
-  // 3) 플레이어 구성이 정확히 기존 데모 4인
-  const ids = (round.players ?? []).map((p) => p.id);
-  if (ids.length !== LEGACY_DEMO_PLAYER_IDS.length) return false;
-  if (!LEGACY_DEMO_PLAYER_IDS.every((id) => ids.includes(id))) return false;
-  // 4) 사용자가 플레이한 흔적이 없음 — 있으면 사용자의 데이터이므로 보존
-  if ((round.shots ?? []).length > 0) return false;
-  if ((round.events ?? []).length > 0) return false;
-  if (round.lastDistanceShare) return false;
-  if ((round.currentHoleNumber ?? 1) !== 1) return false;
-  const anyScore = (round.holes ?? []).some(
-    (h) => h.scores && Object.keys(h.scores).length > 0
-  );
-  if (anyScore) return false;
-  const anyHoleProgress = (round.holes ?? []).some(
-    (h) => h.number !== 1 && h.status && h.status !== "pending"
-  );
-  if (anyHoleProgress) return false;
-  return true;
+  return !!round && round.id === "round_demo_001";
 }
 
 export function loadRound(userId) {
+  // RC4 — migration 경로 추적. Founder 기기에서 어느 분기를 탔는지 반드시
+  // 보이도록 ENTER / DELETE / SKIP 세 종류를 남긴다.
+  const key = (() => {
+    try { return resolveRoundStorageKey(userId); } catch { return "(key error)"; }
+  })();
   try {
-    if (typeof window === "undefined" || !window.localStorage) return null;
-    const raw = window.localStorage.getItem(resolveRoundStorageKey(userId));
-    if (!raw) return null;
+    if (typeof window === "undefined" || !window.localStorage) {
+      // eslint-disable-next-line no-console
+      console.log("[MIGRATION SKIP]", "no localStorage");
+      return null;
+    }
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      // eslint-disable-next-line no-console
+      console.log("[MIGRATION SKIP]", "no saved round", `key=${key}`);
+      return null;
+    }
     const parsed = JSON.parse(raw);
-    if (parsed.schemaVersion !== EXPECTED_SCHEMA_VERSION) return null;
-    if (!looksLikeRound(parsed)) return null;
-    const hydrated = hydrateRound(parsed);
-    // RC4 — legacy demo state migration. 이전 빌드가 자동 저장한 손대지
-    // 않은 데모 라운드만 선별 폐기한다. null을 반환하면 호출부(init)의
-    // `?? createIdleRoundState()`가 평가되어 idle 상태로 시작하고,
-    // RoundProvider의 자동 저장이 그 idle 상태를 기록한다.
-    // schema 전체를 올려 모든 사용자의 라운드를 일괄 삭제하지 않는다.
-    if (isLegacyDemoRound(hydrated)) {
+    // eslint-disable-next-line no-console
+    console.log(
+      "[MIGRATION ENTER]",
+      `key=${key}`,
+      `id=${parsed?.id}`,
+      `status=${parsed?.status}`,
+      `players=${(parsed?.players ?? []).length}`,
+      `schema=${parsed?.schemaVersion}`
+    );
+    if (parsed.schemaVersion !== EXPECTED_SCHEMA_VERSION) {
+      // eslint-disable-next-line no-console
+      console.log("[MIGRATION SKIP]", `schema mismatch: ${parsed.schemaVersion} != ${EXPECTED_SCHEMA_VERSION} -> discard`);
+      return null;
+    }
+    if (!looksLikeRound(parsed)) {
+      // eslint-disable-next-line no-console
+      console.log("[MIGRATION SKIP]", "not a round shape -> discard");
+      return null;
+    }
+    // legacy 판정은 hydrate 이전의 원본 id로 한다 — hydrate 단계에서
+    // 예외가 나더라도 legacy 삭제는 반드시 수행되도록.
+    if (isLegacyDemoRound(parsed)) {
+      // eslint-disable-next-line no-console
+      console.log("[MIGRATION DELETE]", "legacy demo state cleared", `id=${parsed.id}`);
       // eslint-disable-next-line no-console
       console.log("[ROUND MIGRATION] legacy demo state cleared");
       try {
-        window.localStorage.removeItem(resolveRoundStorageKey(userId));
+        window.localStorage.removeItem(key);
       } catch {
         /* 삭제 실패해도 null 반환으로 idle 시작은 보장된다 */
       }
-      return null;
+      return null; // -> 호출부의 ?? createIdleRoundState() 가 평가됨
     }
+    const hydrated = hydrateRound(parsed);
+    // eslint-disable-next-line no-console
+    console.log("[MIGRATION SKIP]", "keeping saved round", `id=${hydrated.id}`, `status=${hydrated.status}`, `players=${hydrated.players.length}`);
     return hydrated;
   } catch (err) {
-    // Corrupted JSON or anything else unexpected — caller falls back to seed.
+    // eslint-disable-next-line no-console
+    console.log("[MIGRATION SKIP]", "load error -> discard", err?.message ?? err);
     return null;
   }
 }
