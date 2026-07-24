@@ -25,6 +25,7 @@ import {
   COURSE_SNAPSHOT_APPLIED_WITH_HOLES,
   ROUND_START_FROM_ROOM,
   ROUND_ENTER_NETWORK_BASELINE,
+  ROUND_LEAVE_NETWORK,
 } from "./roundActions.js";
 import { calculateTeamDistances, canApplyPositionCorrection } from "./distanceCalculator.js";
 import { selectPlayerGps } from "./roundSelectors.js";
@@ -671,6 +672,16 @@ export function roundReducer(state, action) {
       const { preBuiltRound } = action.payload;
       if (!preBuiltRound) return state;
       return preBuiltRound;
+    }
+
+    case ROUND_LEAVE_NETWORK: {
+      // RC4 — 명시적 방 나가기. ROUND_ENTER_NETWORK_BASELINE의 "라이브
+      // 라운드는 덮어쓰지 않는다" 가드를 의도적으로 적용하지 않는다:
+      // 사용자가 방을 나간 이상 그 네트워크 라운드는 반드시 사라져야 한다.
+      // 데모 시드는 만들지 않는다(플레이어 0명).
+      const { baseline } = action.payload;
+      if (!baseline) return state;
+      return baseline;
     }
 
     case ROUND_ENTER_NETWORK_BASELINE: {

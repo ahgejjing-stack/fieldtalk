@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, X, Check, Mic } from "lucide-react";
 import { useRoom } from "../context/useRoom.js";
 import { useRound } from "../context/useRound.js";
+import { createNetworkRoundState } from "../data/roundSeed.js";
 import { useStartRoundFromRoom } from "../room/useStartRoundFromRoom.js";
 import { clearRoomState } from "../room/roomStorage.js";
 import { clearActiveRoomRef } from "../room/activeRoomRef.js";
@@ -393,6 +394,10 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     // Round and a server-confirmed-expired rejoin, that discards the ref.)
     clearRoomState(identity.userId);
     clearActiveRoomRef();
+    // RC4 — 방 나가기는 활성 네트워크 라운드도 제거한다(데모 생성 없이).
+    // 이 경로는 이전에 Round를 전혀 정리하지 않아, 방을 나간 뒤에도 이전
+    // 네트워크 라운드가 남아 있었다. App.handleLeaveRoom과 동일한 규칙.
+    roundDispatch(roundActions.roundLeaveNetwork(createNetworkRoundState({ players: [] })));
     // RC4 — leaving a room is NOT a logout: identity, nickname, and the
     // nickname-confirmation session flag must all survive so re-joining a
     // new room never forces the person to re-confirm their nickname.

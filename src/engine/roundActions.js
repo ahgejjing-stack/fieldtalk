@@ -32,6 +32,7 @@ export const COURSE_SNAPSHOT_APPLIED = "COURSE_SNAPSHOT_APPLIED";
 export const COURSE_SNAPSHOT_APPLIED_WITH_HOLES = "COURSE_SNAPSHOT_APPLIED_WITH_HOLES";
 export const ROUND_START_FROM_ROOM = "ROUND_START_FROM_ROOM";
 export const ROUND_ENTER_NETWORK_BASELINE = "ROUND_ENTER_NETWORK_BASELINE";
+export const ROUND_LEAVE_NETWORK = "ROUND_LEAVE_NETWORK";
 export const ROUND_RESET = "ROUND_RESET";
 
 export const roundStart = () => ({ type: ROUND_START });
@@ -238,3 +239,11 @@ export const roundEnterNetworkBaseline = (baseline) => ({
  * back-arrow, which should preserve an in-progress round untouched. */
 export const roundReset = () => ({ type: ROUND_RESET });
 
+/** RC4 — 네트워크 방 나가기 전용. 활성 네트워크 라운드를 무조건 제거하고
+ * 플레이어 0명의 깨끗한 상태로 만든다. roundReset()과 달리 데모 플레이어를
+ * 생성하지 않고, roundEnterNetworkBaseline()과 달리 "라이브 라운드 보호"
+ * 가드를 적용하지 않는다(명시적 종료이므로 반드시 제거되어야 한다). */
+export const roundLeaveNetwork = (baseline) => ({
+  type: ROUND_LEAVE_NETWORK,
+  payload: { baseline },
+});

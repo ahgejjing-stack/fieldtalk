@@ -28,7 +28,7 @@ import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
 import { RC4_BUILD_STAMP } from "./config/buildStamp.js";
 import { installDiagLog } from "./config/diagLog.js";
 import { clearRoomState } from "./room/roomStorage.js";
-import { createNetworkRoundState } from "./data/roundSeed.js";
+import { createNetworkRoundState, createRoundSeed } from "./data/roundSeed.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
 // sender path calls via useAudioEngine), not a second playback path.
 import { playSoundById } from "./services/audioEngine.js";
@@ -302,11 +302,19 @@ function AppShell() {
     roomDispatch(roomActions.roomReset());
     clearRoomState(identity.userId);
     clearActiveRoomRef();
-    // Reset the Round Engine to a clean local baseline so the just-left
-    // network round can't reappear. createNetworkRoundState() with no
-    // players is a clean, demo-free empty state; the demo/local flow will
-    // re-seed on its own next time it's needed.
-    dispatch(actions.roundEnterNetworkBaseline(createNetworkRoundState({ players: [] })));
+    // RC4 — 방 나가기 후에는 LOCAL 라운드 상태로 되돌린다.
+    // 이전에는 players:[] 인 빈 network baseline으로 리셋했는데, 그 상태로
+    // 라운드 화면이 렌더되면 플레이어가 0명이라 "빈 화면"이 됐다
+    // (Founder 확인 버그). 로컬 시드는 항상 플레이 가능한 상태이므로
+    // 홈에서 바로 로컬 라운드를 시작할 수 있다.
+    // RC4 — 네트워크 방 나가기 전용 정리.
+    // roundReset()은 createRoundSeed()(데모 4명)를 만들기 때문에 여기서는
+    // 쓰지 않는다. 네트워크 방을 나갈 때 데모 플레이어가 생성되면 안 된다
+    // (Product Director decision). 활성 네트워크 라운드만 제거하고
+    // 플레이어 0명의 깨끗한 상태로 둔다. Home 화면은 round 상태를 참조하지
+    // 않으므로 이 상태로 홈에 머무는 데 문제가 없고, 다음 로컬 라운드는
+    // 홈에서 시작할 때 새로 시드된다.
+    dispatch(actions.roundLeaveNetwork(createNetworkRoundState({ players: [] })));
     setNetworkCommunicationEnabled(false);
     setScreen("home");
     showToast("방에서 나갔습니다");

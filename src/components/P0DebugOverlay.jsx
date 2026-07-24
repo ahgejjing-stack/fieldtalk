@@ -106,6 +106,13 @@ function P0DebugOverlayInner({
   screen = null,
 }) {
   const [collapsed, setCollapsed] = useState(true);
+  // RC4 CRITICAL — every hook MUST run before the `if (collapsed) return`
+  // early return below. Previously the diag-log hooks lived AFTER it, so
+  // React executed 2 hooks when PO was closed and 4 when open, throwing
+  // "Rendered more hooks than during the previous render" — that throw is
+  // what the error boundary caught as "PO Retry" on the real device.
+  const [, forceTick] = useState(0);
+  useEffect(() => subscribeDiag(() => forceTick((n) => n + 1)), []);
   // RC4 P0 — the Room/Round block must be visible even before any
   // communication lifecycle exists (p0Lifecycle is null until a network
   // session starts). Previously `if (!p0Lifecycle) return null` hid the
@@ -115,8 +122,19 @@ function P0DebugOverlayInner({
 
   if (collapsed) {
     return (
-      <button type="button" className="ft-p0-overlay-collapsed" onClick={() => setCollapsed(false)}>
+      <button
+        type="button"
+        className="ft-p0-overlay-collapsed"
+        onClick={() => setCollapsed(false)}
+        title={buildStamp ?? ""}
+      >
+        {/* RC4 — 빌드 식별자를 PO를 "열지 않고도" 보이게 한다. PO를 열어야만
+            확인 가능하면, PO가 고장난 상황에서 구버전 여부를 판별할 수 없다.
+            스탬프 끝 5글자만 노출(예: HOLE1 / DIRECT). */}
         PO
+        <span style={{ display: "block", fontSize: 8, opacity: 0.75, lineHeight: 1 }}>
+          {(buildStamp ?? "").slice(-6)}
+        </span>
       </button>
     );
   }
@@ -135,11 +153,6 @@ function P0DebugOverlayInner({
     ["isNetworkBaseline", isNetworkBaseline == null ? "—" : String(isNetworkBaseline)],
   ];
 
-  // RC4 P0 — on-device diagnostic log. Founder has no desktop console
-  // attached to the phone, so the bracketed [TAG] lines were invisible
-  // during device testing. This renders the most recent ones inline.
-  const [, forceTick] = useState(0);
-  useEffect(() => subscribeDiag(() => forceTick((n) => n + 1)), []);
   const diagEntries = getDiagEntries();
 
   const lastFail = hasLifecycle
