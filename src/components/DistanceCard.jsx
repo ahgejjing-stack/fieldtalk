@@ -150,10 +150,29 @@ export default function DistanceCard({ onToast }) {
     if (sharedAt && sharedAt !== lastSeenSharedAt.current) {
       lastSeenSharedAt.current = sharedAt;
       setFlash(true);
+      // RC4 PLAYABLE — a 400ms flash is invisible on a real course: the
+      // phone is usually in a pocket or the player is looking at the ball.
+      // A teammate's distance is the one piece of info that has to land, so
+      // announce it out loud and buzz. Only for SOMEONE ELSE's share (my
+      // own already spoke on send). The FIRST share of a round is announced
+      // too — a fresh round always starts with lastDistanceShare === null,
+      // so suppressing it would silence the single most useful moment.
+      const fromTeammate = lastShare && lastShare.referencePlayerId !== meId;
+      if (fromTeammate) {
+        const who = round.players.find((p) => p.id === lastShare.referencePlayerId)?.name ?? "팀원";
+        try {
+          if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([40, 60, 40]);
+        } catch {
+          /* ignore */
+        }
+        speakText(`${who} ${lastShare.referenceDistanceM}미터`, { language: "ko-KR" });
+        if (onToast) onToast(`${who} 실측 ${lastShare.referenceDistanceM}m`);
+      }
       const t = setTimeout(() => setFlash(false), 400);
       return () => clearTimeout(t);
     }
     lastSeenSharedAt.current = sharedAt;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastShare?.sharedAt]);
 
   // TASK-009 §3: recomputed on every render from the live localValue, so

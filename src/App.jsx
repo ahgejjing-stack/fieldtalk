@@ -26,6 +26,7 @@ import { buildInitialRoundFromRoom } from "./room/buildInitialRoundFromRoom.js";
 // interruption can offer [계속하기] without restoring stale members.
 import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
 import { RC4_BUILD_STAMP } from "./config/buildStamp.js";
+import { installDiagLog } from "./config/diagLog.js";
 import { clearRoomState } from "./room/roomStorage.js";
 import { createNetworkRoundState } from "./data/roundSeed.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
@@ -59,6 +60,7 @@ function resolveDefaultSignalingUrl() {  const isHttpsPage = typeof window !== "
   }
   return "ws://localhost:8787";
 }
+installDiagLog(); // RC4 — capture tagged diagnostics for on-device display
 const DEFAULT_SIGNALING_URL = resolveDefaultSignalingUrl();
 // RC4 — printed once, at module load, before any UI renders.
 // eslint-disable-next-line no-console
@@ -204,6 +206,18 @@ function AppShell() {
     const effectiveIsDemoSeedRound = startingAsHost
       ? startedRound.id === "round_demo_001"
       : isDemoSeedRound;
+    // RC4 — final-leg trace. These three lines cover the last steps that
+    // were previously invisible: entering the handler, the silent
+    // early-return guard, and the actual screen switch.
+    // eslint-disable-next-line no-console
+    console.log(
+      "[HANDLE START ROUND] ENTER",
+      `startingAsHost=${startingAsHost}`,
+      `startedRoundId=${startedRound?.id ?? "none"}`,
+      `players=${startedRound?.players?.length ?? "-"}`,
+      `networkEnabled=${networkCommunicationEnabled}`,
+      `effectiveIsDemoSeed=${effectiveIsDemoSeedRound}`
+    );
 
     // RC4 P0-2/P0-3 — in network mode, entering the round must show the
     // REAL network round, never the demo seed. A GUEST who taps before
@@ -212,6 +226,8 @@ function AppShell() {
     // 재식/재근/광천/해란" symptom). A HOST who just started never hits
     // this branch, because startedRound is a real round_<ts>.
     if (networkCommunicationEnabled && effectiveIsDemoSeedRound) {
+      // eslint-disable-next-line no-console
+      console.warn("[HANDLE START ROUND] BLOCKED — demo-seed guard, no screen change");
       showToast("Host가 라운드를 시작하면 자동으로 입장합니다");
       return;
     }
@@ -239,6 +255,8 @@ function AppShell() {
       // eslint-disable-next-line no-console
       console.log("[DEMO STATE GUARD]", "demoEffectsEnabled=false");
     }
+    // eslint-disable-next-line no-console
+    console.log("[HANDLE START ROUND] setScreen(round) — Hole1 진입");
     setScreen("round");
   };
 
@@ -604,15 +622,30 @@ function AppShell() {
             상대방 음성이 재생되지 않고 있습니다. 탭하여 다시 시도하세요.
           </button>
         )}
-        {(isDevModeTopLevel || networkCommunicationEnabled) && (
-          <P0DebugOverlay
-            p0Lifecycle={communication.p0Lifecycle}
-            p0LevelDebug={communication.p0LevelDebug}
-            remoteAudioContextState={communication.remoteAudioContextState}
-            remoteTrackAttached={communication.remoteTrackAttached}
-            lastAudioPlaybackAttempt={communication.lastAudioPlaybackAttempt}
-          />
-        )}
+        {/* RC4 P0 — the PO panel must be reachable in EVERY state being
+            investigated. It was previously gated behind
+            (isDevModeTopLevel || networkCommunicationEnabled), so on a
+            production build with network off — exactly the state under
+            investigation — the PO button did not exist. Ungated while the
+            P0 investigation is open. */}
+        <P0DebugOverlay
+          p0Lifecycle={communication.p0Lifecycle}
+          p0LevelDebug={communication.p0LevelDebug}
+          remoteAudioContextState={communication.remoteAudioContextState}
+          remoteTrackAttached={communication.remoteTrackAttached}
+          lastAudioPlaybackAttempt={communication.lastAudioPlaybackAttempt}
+          buildStamp={RC4_BUILD_STAMP}
+          screen={screen}
+          roomCode={room?.code ?? null}
+          roomStatus={room?.status ?? null}
+          roomMemberCount={room?.members?.length ?? null}
+          roomHostUserId={room?.hostUserId ?? null}
+          networkEnabled={networkCommunicationEnabled}
+          roundId={round?.id ?? null}
+          roundStatus={round?.status ?? null}
+          roundPlayerCount={round?.players?.length ?? null}
+          isNetworkBaseline={round?.isNetworkBaseline === true}
+        />
       </div>
     </div>
   );

@@ -28,6 +28,15 @@ function displayCourseName(name) {
   return name.replace(/^\[TEST\]\s*/, "");
 }
 
+// RC4 PLAYABLE — a built-in course so ROUND START can never be blocked by
+// a failed/slow course fetch. Same shape as the provider's CourseReference.
+const FALLBACK_COURSE = {
+  id: "fallback_course_18",
+  course: { id: "fallback_course_18", name: "기본 코스", holeCount: 18 },
+  golfClub: { name: "FieldTalk" },
+  holes: Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4 })),
+};
+
 const RECENT_COMPANIONS = [
   { id: "player_jaegeun", name: "재근" },
   { id: "player_gwangcheon", name: "광천" },
@@ -282,10 +291,11 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     ? "준비 중"
     : "누르고 말해보세요";
 
-  function runStart() {
-    const result = startRoundFromRoom(selectedCourse, startHole);
+  function runStart(courseOverride) {
+    const course = courseOverride ?? selectedCourse ?? FALLBACK_COURSE;
+    const result = startRoundFromRoom(course, startHole);
     // eslint-disable-next-line no-console
-    console.log("[ROOM OVERLAY] runStart", `buildOk=${result.ok}`, `reason=${result.reason ?? "-"}`, `course=${selectedCourse?.id ?? "none"}`, `startHole=${startHole}`);
+    console.log("[ROOM OVERLAY] runStart", `buildOk=${result.ok}`, `reason=${result.reason ?? "-"}`, `course=${course?.id ?? "none"}`, `startHole=${startHole}`);
     if (!result.ok) {
       // Blocking — Snapshot 생성 실패(또는 그 외 예상 못한 사유): 진행 불가,
       // 확인 모달이 아니라 원인만 안내.
@@ -300,13 +310,13 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
     if (networkCommunicationEnabled && communication.sendRoundStart) {
       communication.sendRoundStart({
         roundId: result.round.id,
-        courseSnapshot: selectedCourse,
+        courseSnapshot: course,
         startHole,
         startedAt: result.round.startedAt ?? new Date().toISOString(),
         players: result.round.players.map((p) => ({ id: p.id, name: p.name })),
       });
     }
-    onToast(`${displayCourseName(selectedCourse.course.name)} ${startHole}번 홀로 라운드를 시작합니다`);
+    onToast(`${displayCourseName(course.course.name)} ${startHole}번 홀로 라운드를 시작합니다`);
     setPendingWarnings(null);
     onClose();
     // RC4 P0 Round Start Deadlock fix (Issue 1-A) — hand the round we just
@@ -319,19 +329,20 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
   }
 
   function handleStartTap() {
-    // RC4 P0-1 — explicit, visible reason instead of a dead button.
+    // RC4 PLAYABLE — ROUND START must ALWAYS run. Founder testing showed the
+    // tap doing nothing while a Room existed. Rather than depend on the
+    // course list having loaded, on warnings, or on button enablement, this
+    // path now always produces a usable course and calls runStart().
     // eslint-disable-next-line no-console
     console.log("[ROOM OVERLAY] handleStartTap ENTER", `hasCourse=${!!selectedCourse}`, `coursesLoaded=${courses.length}`, `startHole=${startHole}`, `roomCode=${room?.code}`, `networkEnabled=${networkCommunicationEnabled}`);
+    const courseForRound = selectedCourse ?? FALLBACK_COURSE;
     if (!selectedCourse) {
-      onToast(
-        courses.length === 0
-          ? "코스를 불러오지 못했습니다. 화면을 닫았다 다시 열어주세요."
-          : "코스를 먼저 선택해주세요."
-      );
-      return;
+      // eslint-disable-next-line no-console
+      console.warn("[ROOM OVERLAY] no course loaded — using FALLBACK_COURSE so the round can still start");
+      onToast("기본 코스로 라운드를 시작합니다");
     }
     const warnings = selectRoomWarnings(room, {
-      courseSelected: !!selectedCourse,
+      courseSelected: true, // we always have a course now (real or fallback)
       startHoleSelected: typeof startHole === "number",
       currentUserId: identity.userId,
     });
@@ -354,7 +365,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
       setPendingWarnings(blockingWarnings); // Warning — 확인 후 시작 가능
       return;
     }
-    runStart();
+    runStart(courseForRound);
   }
 
   // RC1-WEEK6 Priority 2 — Explicit Leave Room. Three separate systems
@@ -680,7 +691,7 @@ export default function RoomOverlay({ isOpen, onClose, onToast, onStart }) {
               <button className="ft-pin-pill" onClick={() => setPendingWarnings(null)}>
                 취소
               </button>
-              <button className="ft-pin-pill is-active" onClick={runStart}>
+              <button className="ft-pin-pill is-active" onClick={() => runStart()}>
                 시작
               </button>
             </div>
