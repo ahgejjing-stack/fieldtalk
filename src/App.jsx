@@ -28,7 +28,7 @@ import { saveActiveRoomRef, clearActiveRoomRef } from "./room/activeRoomRef.js";
 import { RC4_BUILD_STAMP } from "./config/buildStamp.js";
 import { installDiagLog } from "./config/diagLog.js";
 import { clearRoomState } from "./room/roomStorage.js";
-import { createNetworkRoundState, createRoundSeed } from "./data/roundSeed.js";
+import { createNetworkRoundState, createRoundSeed, createIdleRoundState } from "./data/roundSeed.js";
 // RC4 P1-1 — reuse the EXISTING audio engine (same function GalleryPanel's
 // sender path calls via useAudioEngine), not a second playback path.
 import { playSoundById } from "./services/audioEngine.js";
@@ -234,6 +234,15 @@ function AppShell() {
     // The host already dispatched roundStartFromRoom() in runStart(); only
     // the non-host / local path needs to kick a plain roundStart() here.
     if (!startingAsHost && round.status !== "active") {
+      // RC4 제품 구조 수정 — 로컬(데모) 라운드는 사용자가 여기서 명시적으로
+      // 시작할 때만 생성한다. 앱 시작 시점에는 idle 상태이므로 데모 플레이어가
+      // 존재하지 않는다. idle이면 데모 시드를 만들어 플레이 가능한 상태로
+      // 전환하고, 이미 라운드가 있으면 기존 동작(재개)을 유지한다.
+      if (round.isIdle || (round.players?.length ?? 0) === 0) {
+        // eslint-disable-next-line no-console
+        console.log("[LOCAL ROUND] seeding demo round (explicit user start)");
+        dispatch(actions.roundReset()); // createRoundSeed()로 교체
+      }
       dispatch(actions.roundStart());
     }
     if (startingAsHost && networkCommunicationEnabled) {
@@ -325,7 +334,7 @@ function AppShell() {
     // 플레이어 0명인 빈 라운드가 되어 빈 화면의 원인이 된다.
     // 네트워크 라운드에는 데모 플레이어를 절대 주입하지 않는다 —
     // 네트워크 라운드는 서버 로스터로만 생성된다(createRoundPlayersFromRoom).
-    dispatch(actions.roundLeaveNetwork(createRoundSeed()));
+    dispatch(actions.roundLeaveNetwork(createIdleRoundState()));
     setNetworkCommunicationEnabled(false);
     setScreen("home");
     showToast("방에서 나갔습니다");

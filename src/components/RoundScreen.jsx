@@ -443,19 +443,21 @@ export default function RoundScreen({ onBack, onGoHome, onLeaveRoom, onEndRound,
                 <Mic size={13} strokeWidth={2.4} />
               </span>
             </button>
-            {playerSummaries.map((summary) => {
-              const isMe = summary.id === meId;
-              return (
+            {/* RC4 제품 구조 수정 — PTT 대상 목록에서 본인을 제외한다.
+                자기 자신에게 PTT를 보낼 일은 없으므로, 선택만 막는 것이
+                아니라 목록에서 아예 빼는 것이 맞다. Host/Guest 동일. */}
+            {playerSummaries
+              .filter((summary) => summary.id !== meId)
+              .map((summary) => (
                 <PlayerCard
                   key={summary.id}
                   summary={summary}
-                  isMe={isMe}
-                  isSelectable={!isMe}
+                  isMe={false}
+                  isSelectable
                   isSelected={selectedTargets.has(summary.id)}
                   onToggleSelect={() => handleToggleTarget(summary.id)}
                 />
-              );
-            })}
+              ))}
           </div>
         </div>
 

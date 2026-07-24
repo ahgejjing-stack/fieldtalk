@@ -302,6 +302,44 @@ export const ME_PLAYER_ID = "player_jaesik";
  * @param {number}      [params.startHole]
  * @param {string}      [params.status]   — "pending" until a real round_started lands
  */
+
+/**
+ * createIdleRoundState — RC4 제품 구조 수정.
+ * ------------------------------------------------------------------
+ * 앱 시작 시의 기본 상태. 라운드가 "아직 없음"을 나타낸다.
+ *
+ * 이전에는 RoundProvider가 곧바로 createRoundSeed()(round_demo_001,
+ * status=active, 데모 플레이어 4명)로 초기화했다. 그 결과 사용자가 방을
+ * 만들기도 전에 데모 라운드가 이미 실행 중인 상태였고, PO DIAG에
+ * room.code=none인데 round_demo_001 active로 표시됐다.
+ *
+ * Room 생성 이전에는 Demo Player / Demo Round / Demo State가 존재하면
+ * 안 된다. 따라서 기본값은 플레이어가 없는 idle 상태다.
+ * 데모 라운드는 사용자가 명시적으로 로컬 라운드를 시작할 때만 만든다.
+ */
+export function createIdleRoundState() {
+  const holes = [];
+  for (let n = 1; n <= 18; n += 1) holes.push(buildPendingHole(n));
+  return {
+    schemaVersion: 1,
+    id: "round_idle",
+    status: "idle",
+    roomId: null,
+    hostUserId: null,
+    course: { id: null, name: null, totalHoles: 18 },
+    currentHoleNumber: 1,
+    startedAt: null,
+    completedAt: null,
+    settings: { unit: "meter", soundMode: "fun", outputTargets: ["phone", "headphones", "watch"] },
+    holes,
+    players: [],
+    events: [],
+    shots: [],
+    lastDistanceShare: null,
+    isIdle: true,
+  };
+}
+
 export function createNetworkRoundState({
   roomId = null,
   roundId = null,

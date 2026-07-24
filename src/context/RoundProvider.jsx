@@ -2,7 +2,7 @@ import React, { createContext, useEffect, useMemo, useReducer, useRef } from "re
 import { roundReducer } from "../engine/roundReducer.js";
 import * as actions from "../engine/roundActions.js";
 import { loadRound, saveRound } from "../engine/roundStorage.js";
-import { createRoundSeed, createNetworkRoundState } from "../data/roundSeed.js";
+import { createRoundSeed, createNetworkRoundState, createIdleRoundState } from "../data/roundSeed.js";
 import { decideNetworkBaseline } from "../room/decideNetworkBaseline.js";
 import { useIdentity } from "./useIdentity.js";
 import { useCommunication } from "./useCommunication.js";
@@ -12,7 +12,11 @@ import { useRuntimeMode } from "./RuntimeModeContext.jsx";
 export const RoundContext = createContext(null);
 
 function init(userId) {
-  return loadRound(userId) ?? createRoundSeed();
+  // RC4 제품 구조 수정 — 앱 시작 시 데모 라운드를 실행하지 않는다.
+  // 이전에는 createRoundSeed()(round_demo_001 active, 데모 4명)가
+  // 기본값이라 Room 생성 전부터 데모 라운드가 켜져 있었다.
+  // 저장된 라운드가 있으면 복원하고, 없으면 idle(플레이어 0명) 상태로 둔다.
+  return loadRound(userId) ?? createIdleRoundState();
 }
 
 // RC4 diagnostic — [ROUND PROVIDER STATE]: log every Round Engine
