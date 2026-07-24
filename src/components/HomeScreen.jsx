@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Check, Radio, Settings, User, Users } from "lucide-react";
 import GolfBall from "./GolfBall.jsx";
-import RoomOverlay from "./RoomOverlay.jsx";
+import RoomLobbyScreen from "./RoomLobbyScreen.jsx";
 import { useRoom } from "../context/useRoom.js";
 import { useRound } from "../context/useRound.js";
 import CreateRoomScreen from "./CreateRoomScreen.jsx";
@@ -40,7 +40,7 @@ export default function HomeScreen({
   const { round } = useRound(); // RC4 P0 — 진행 중 라운드면 준비 화면을 건너뛴다
   const identity = useIdentity();
   const { setNetworkCommunicationEnabled, setRejoinRequested, networkCommunicationEnabled } = useRuntimeMode();
-  const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
+  const [roomLobbyOpen, setRoomLobbyOpen] = useState(false);
   // RC4 — 방 만들기 화면. Room은 이 화면의 [방 만들기] 버튼에서만 생성된다.
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   // 방 만들기 화면에서 고른 코스/시작 홀을 Room 화면으로 전달한다.
@@ -80,12 +80,12 @@ export default function HomeScreen({
     dispatch(actions.roomJoinByCode(activeRef.roomId, identity.userId, identity.displayName));
     setRejoinRequested?.(true);
     setNetworkCommunicationEnabled(true);
-    setRoomOverlayOpen(true);
+    setRoomLobbyOpen(true);
   };
 
   // RC4 CRITICAL — the home "라운드 시작" button.
   // If a Room exists at all, the real round must be built from that room
-  // via RoomOverlay's ROUND START (course selection + buildInitialRoundFromRoom).
+  // via Room Lobby's ROUND START.
   // The previous version gated this on networkCommunicationEnabled, but a
   // device test showed that flag can be false at this moment (something
   // flips it off after 팀 연결 — traced via [NETWORK MODE] logs), which
@@ -96,11 +96,9 @@ export default function HomeScreen({
   // bare start.
   const handleHomeStartRound = () => {
     // eslint-disable-next-line no-console
-    console.log("[HOME START]", `hasRoom=${!!room}`, `networkEnabled=${networkCommunicationEnabled}`, "→", room ? "open RoomOverlay (build real round)" : "bare onStartRound (local/demo)");
-    // RC4 P0 — 이미 진행 중인 라운드가 있으면 준비 화면(RoomOverlay)을
-    // 다시 열지 않고 Hole로 바로 복귀한다. 이전에는 room만 있으면 무조건
-    // 오버레이를 열어서 "ROUND START -> 다시 라운드 준비"로 돌아갔다.
-    // 라운드 준비 화면은 라운드를 "시작하기 전" 1회만 필요하다.
+    console.log("[HOME START]", `hasRoom=${!!room}`, `networkEnabled=${networkCommunicationEnabled}`, "→", room ? "open Room Lobby" : "bare onStartRound (local/demo)");
+    // RC4 — 진행 중인 라운드가 있으면 Hole로 복귀한다.
+    // (Round Preparation 화면은 Flow에서 제거되었고, Room은 대기실이다.)
     const roundInProgress = round && round.status === "active" && (round.players?.length ?? 0) > 0;
     if (roundInProgress) {
       // RC4 P0 — 복귀 전용 경로. onStartRound(round)를 쓰면 인자 때문에
@@ -112,7 +110,7 @@ export default function HomeScreen({
       // Ensure network mode is on for a room-based round — closing/reopening
       // the overlay or other flows may have left it off.
       if (!networkCommunicationEnabled) setNetworkCommunicationEnabled(true);
-      setRoomOverlayOpen(true);
+      setRoomLobbyOpen(true);
       return;
     }
     onStartRound();
@@ -196,7 +194,7 @@ export default function HomeScreen({
   useEffect(() => {
     if (!autoJoinCode) return;
     dispatch(actions.roomJoinByCode(autoJoinCode, identity.userId, identity.displayName));
-    setRoomOverlayOpen(true);
+    setRoomLobbyOpen(true);
     onToast(`Room ${autoJoinCode}에 참가했습니다`);
     onAutoJoinConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,7 +225,7 @@ export default function HomeScreen({
     // 이미 방이 있으면 방 만들기가 아니라 Room 화면으로 간다.
     if (room) {
       setNetworkCommunicationEnabled(true);
-      setRoomOverlayOpen(true);
+      setRoomLobbyOpen(true);
       return;
     }
     withNicknameConfirmed(() => {
@@ -252,7 +250,7 @@ export default function HomeScreen({
     }
     setNetworkCommunicationEnabled(true);
     setCreateRoomOpen(false);
-    setRoomOverlayOpen(true); // 생성 완료 -> Room 화면(대기)
+    setRoomLobbyOpen(true); // 생성 완료 -> Room 화면(대기)
   };
 
   // RC1-WEEK3 §1 — the real replacement for "호스트가 동반자 상태를 대신
@@ -297,7 +295,7 @@ export default function HomeScreen({
     if (!code || !code.trim()) return;
     dispatch(actions.roomJoinByCode(code.trim().toUpperCase(), identity.userId, identity.displayName));
     setNetworkCommunicationEnabled(true);
-    setRoomOverlayOpen(true);
+    setRoomLobbyOpen(true);
   };
 
   const toggleInvite = (companion) => {
@@ -537,21 +535,15 @@ export default function HomeScreen({
         onToast={onToast}
       />
 
-      <RoomOverlay
-        isOpen={roomOverlayOpen}
-        onClose={() => setRoomOverlayOpen(false)}
+      <RoomLobbyScreen
+        isOpen={roomLobbyOpen}
+        onClose={() => setRoomLobbyOpen(false)}
         onToast={onToast}
-        // RC4 — 방 만들기 화면에서 고른 코스/시작 홀을 그대로 이어받는다.
-        // 같은 설정을 Room 화면에서 다시 고르게 하지 않기 위함.
-        initialCourseId={pendingRoundSetup?.course?.id ?? null}
-        initialStartHole={pendingRoundSetup?.startHole ?? 1}
+        // RC4 — 방 만들기에서 정한 코스/시작 홀을 그대로 사용한다.
+        // Room은 설정 화면이 아니라 대기실이므로 다시 고르게 하지 않는다.
+        roundSetup={pendingRoundSetup}
         onStart={(startedRound) => {
-          setRoomOverlayOpen(false);
-          // RC4 P0 Round Start Deadlock fix (Issue 1-A) — forward the
-          // freshly-built round so App bypasses its stale-closure demo
-          // seed gate for the host. The plain "라운드 시작" button below
-          // still calls onStartRound() with no argument (local/seed path),
-          // so backward compatibility is preserved.
+          setRoomLobbyOpen(false);
           onStartRound(startedRound);
         }}
       />
